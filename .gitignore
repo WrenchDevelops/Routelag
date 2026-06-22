@@ -1,0 +1,16 @@
+# Generated client configs contain private keys — never commit
+clients/*.conf
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+
+# RouteLag Desktop
+routelag-desktop/node_modules/
+routelag-desktop/dist/
+routelag-desktop/src-tauri/target/
+routelag-desktop/**/*.conf
