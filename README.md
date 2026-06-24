@@ -1,47 +1,57 @@
 # RouteLag MVP
 
-A simple single-server gaming tunnel using WireGuard on Ubuntu 24.04.
+A one-server RouteLag routing tunnel MVP using an Ubuntu 24.04 VPS and a
+Windows desktop beta app.
 
-Route your PC traffic through a VPS:
+Normal tester flow:
 
+```text
+Login -> Select Fortnite -> Select Johannesburg Beta -> Optimize
 ```
-User PC → WireGuard tunnel → VPS → Internet / game servers
+
+The desktop app creates the RouteLag route session automatically. Testers should
+not need to import tunnel files manually.
+
+## Architecture
+
+```text
+User PC -> RouteLag Engine -> VPS -> Internet / game servers
 ```
 
-This is a **basic MVP** — not a full ExitLag-style service. A Windows desktop beta app is available in [`routelag-desktop/`](routelag-desktop/).
+Current dev server:
+
+- VPS: `102.211.56.103`
+- Server name: Johannesburg Beta
+- Game: Fortnite
+- Tunnel network: `10.66.66.0/24`
+- Tunnel port: UDP `51820`
 
 ## What This Does
 
-- Installs WireGuard on an Ubuntu 24.04 VPS
-- Creates a full-tunnel VPN (`AllowedIPs = 0.0.0.0/0`) so all traffic exits through the VPS
-- Generates client configs for Windows and Mac WireGuard apps
-- Provides bash scripts for install, client creation, status, and uninstall
+- Installs the tunnel server on an Ubuntu 24.04 VPS
+- Creates a full-tunnel route (`AllowedIPs = 0.0.0.0/0`) so traffic exits through the VPS
+- Provides a RouteLag API for invite-code login and automatic route sessions
+- Lets the desktop app create hidden local RouteLag Engine profiles
+- Provides bash scripts for install, status, uninstall, and legacy manual client creation
 
-## What This Does NOT Do
+## What This Does Not Do
 
 - Smart multi-hop routing
-- Automatic best-path selection
-- Per-game routing rules
+- Automatic best-path selection across many regions
+- Per-game packet filtering
 - DDoS protection or anti-cheat bypass
-- A polished desktop app
 - Guaranteed lower ping
 
 ## Why One VPS Is Not Full ExitLag
 
-ExitLag and similar services use **many servers worldwide**, intelligent routing, and protocol optimization to find the lowest-latency path to game servers.
+ExitLag and similar services use many servers worldwide, intelligent routing,
+and protocol optimization to find the lowest-latency path to game servers.
 
-This MVP sends **all** your traffic through **one** VPS. If that VPS is far from you or far from the game servers, your ping will likely **get worse**, not better.
+This MVP sends traffic through one VPS. If that VPS is far from the tester or
+far from the game servers, ping can get worse. Use Johannesburg Beta to prove
+the automatic RouteLag session flow before adding better regional servers.
 
-Your VPS (`102.211.56.103`) may be geographically distant from U.S. game servers. Use this MVP to learn how WireGuard tunneling works — not as a production lag-reduction tool.
-
-## Requirements
-
-- Ubuntu 24.04 VPS with root SSH access
-- UDP port `51820` open (VPS firewall + provider panel)
-- WireGuard client app on Windows or Mac
-- Basic comfort with SSH and the terminal
-
-## Quick Start
+## Server Setup
 
 Copy this repo to your VPS, then run:
 
@@ -49,81 +59,53 @@ Copy this repo to your VPS, then run:
 chmod +x scripts/*.sh
 sudo ./scripts/00-check-server.sh
 sudo ./scripts/01-install-server.sh
-sudo ./scripts/02-create-client.sh aiden-pc
 sudo ./scripts/03-status.sh
 ```
 
-## Copy Client Config to Your PC
+## RouteLag API
 
-From your local computer:
-
-```bash
-scp root@102.211.56.103:/root/routelag-mvp/clients/aiden-pc.conf .
-```
-
-Adjust the path if you cloned the repo elsewhere on the VPS.
-
-## Import into WireGuard
-
-1. Open the WireGuard app on your PC
-2. Click **Import tunnel(s) from file** (Windows) or **Import Tunnel(s) from File** (Mac)
-3. Select `aiden-pc.conf`
-4. Click **Activate** / toggle the tunnel on
-
-See detailed guides:
-
-- [Windows setup](docs/WINDOWS-CLIENT.md)
-- [Mac setup](docs/MAC-CLIENT.md)
-
-## Test the Tunnel
-
-**Before connecting** — note your public IP:
+The API lives in [`server/`](server/). For local development it can run in mock
+peer mode without touching `wg0`.
 
 ```bash
-curl -4 ifconfig.me
+cd server
+npm install
+npm run dev
 ```
 
-**Connect** the WireGuard tunnel, then run the same command. It should show `102.211.56.103` (your VPS IP).
+Deploy it on the VPS with `ROUTELAG_PEER_MODE=wg` after `wg0` is active and the
+server public key is configured.
 
-**Ping test:**
+## Desktop App
+
+The beta desktop app lives in [`routelag-desktop/`](routelag-desktop/).
 
 ```bash
-ping 1.1.1.1
+cd routelag-desktop
+npm install
+npm run build
 ```
 
-**Game ping test** — compare in-game latency with the tunnel on vs. off. If ping is worse with the tunnel on, that is expected for a distant VPS.
+Configure `VITE_ROUTELAG_API_URL` for the API host when building a release.
 
-## Repository Structure
+## Legacy Manual Client Configs
 
+Manual configs are still useful for operator testing:
+
+```bash
+sudo ./scripts/02-create-client.sh aiden-pc
 ```
-routelag-mvp/
-├── README.md
-├── scripts/
-│   ├── 00-check-server.sh    # Pre-flight diagnostics
-│   ├── 01-install-server.sh  # Install and configure WireGuard
-│   ├── 02-create-client.sh   # Create a client config
-│   ├── 03-status.sh          # Show server status
-│   ├── 04-uninstall.sh       # Remove server config
-│   └── lib.sh                # Shared helpers
-├── clients/                  # Generated client configs (gitignored)
-└── docs/
-    ├── SETUP.md
-    ├── WINDOWS-CLIENT.md
-    ├── MAC-CLIENT.md
-    └── TROUBLESHOOTING.md
-```
+
+This manual path should not be the normal tester experience.
 
 ## Documentation
 
-- [Server setup guide](docs/SETUP.md) — step-by-step VPS setup including Maxko panel checks
-- [Server client management](docs/SERVER-CLIENT-MANAGEMENT.md) — one config per tester, revoke peers, check handshakes
-- [Windows client](docs/WINDOWS-CLIENT.md)
-- [Mac client](docs/MAC-CLIENT.md)
+- [Automatic routing tunnel](docs/ROUTING-TUNNEL.md)
+- [Server setup guide](docs/SETUP.md)
+- [Server client management](docs/SERVER-CLIENT-MANAGEMENT.md)
+- [Windows manual client](docs/WINDOWS-CLIENT.md)
+- [Mac manual client](docs/MAC-CLIENT.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
-
-## Warning
-
-This VPS may be far from U.S. game servers. Connecting through it can **increase** your ping instead of reducing it. Always test with the tunnel on and off before assuming it helps.
 
 ## Uninstall
 
@@ -131,4 +113,5 @@ This VPS may be far from U.S. game servers. Connecting through it can **increase
 sudo ./scripts/04-uninstall.sh
 ```
 
-This removes WireGuard server configuration but does not uninstall packages or remove SSH firewall rules.
+This removes tunnel server configuration but does not uninstall packages or
+remove SSH firewall rules.

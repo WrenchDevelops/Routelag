@@ -16,6 +16,11 @@ import type {
   TunnelStatus,
   WireGuardStatus,
 } from "./types";
+import type {
+  ActiveRouteSession,
+  GeneratedRouteProfile,
+  RouteKeys,
+} from "./lib/routeEngine";
 
 export const api = {
   getAppVersion: () => invoke<string>("get_app_version"),
@@ -28,6 +33,12 @@ export const api = {
   isElevated: () => invoke<boolean>("is_elevated"),
   restartAsAdmin: () => invoke<void>("restart_as_admin"),
   isWireguardInstalled: () => invoke<boolean>("is_wireguard_installed"),
+  generateRouteKeys: () => invoke<RouteKeys>("generate_route_keys_cmd"),
+  saveRouteSessionProfile: (profile: GeneratedRouteProfile) =>
+    invoke<void>("save_route_session_profile_cmd", { profile }),
+  loadActiveRouteSession: () =>
+    invoke<ActiveRouteSession | null>("load_active_route_session_cmd"),
+  clearActiveRouteSession: () => invoke<void>("clear_active_route_session_cmd"),
   connectTunnel: () => invoke<void>("connect_tunnel"),
   disconnectTunnel: () => invoke<void>("disconnect_tunnel"),
   reconnectTunnel: () => invoke<void>("reconnect_tunnel_cmd"),

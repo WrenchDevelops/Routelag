@@ -129,10 +129,34 @@ pub fn parse_config_identity(content: &str, original_filename: &str) -> ConfigId
     }
 }
 
-fn save_config_meta(app_data_dir: &Path, identity: &ConfigIdentity) -> Result<(), ConfigError> {
+pub fn save_config_meta(app_data_dir: &Path, identity: &ConfigIdentity) -> Result<(), ConfigError> {
     let json = serde_json::to_string_pretty(identity)
         .map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
     fs::write(meta_path(app_data_dir), json).map_err(|e| ConfigError::WriteFailed(e.to_string()))
+}
+
+pub fn write_generated_config(
+    app_data_dir: &Path,
+    content: &str,
+    identity: &ConfigIdentity,
+) -> Result<(), ConfigError> {
+    fs::create_dir_all(app_data_dir)
+        .map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
+    validate_config_content(content)?;
+    let dest = config_path(app_data_dir);
+    fs::write(&dest, content).map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
+    save_config_meta(app_data_dir, identity)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(mut perms) = fs::metadata(&dest).map(|m| m.permissions()) {
+            perms.set_mode(0o600);
+            let _ = fs::set_permissions(&dest, perms);
+        }
+    }
+
+    Ok(())
 }
 
 pub fn load_config_identity(app_data_dir: &Path) -> Option<ConfigIdentity> {

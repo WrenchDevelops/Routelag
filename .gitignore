@@ -1,6 +1,11 @@
 # Generated client configs contain private keys — never commit
 clients/*.conf
 
+# Generated archives / deployment bundles
+*.zip
+*.tar
+*.tar.gz
+
 # Secrets and local env
 .env
 .env.*
@@ -14,3 +19,8 @@ routelag-desktop/node_modules/
 routelag-desktop/dist/
 routelag-desktop/src-tauri/target/
 routelag-desktop/**/*.conf
+
+# RouteLag API
+server/node_modules/
+server/dist/
+server/data/

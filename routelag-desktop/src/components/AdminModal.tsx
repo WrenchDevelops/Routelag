@@ -20,8 +20,8 @@ export function AdminModal({
           Administrator permission required
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-gray-300">
-          RouteLag needs administrator permission to control the WireGuard
-          network tunnel. RouteLag does not modify Fortnite, inject into
+          RouteLag needs administrator permission to control the RouteLag
+          Engine network route. RouteLag does not modify Fortnite, inject into
           Fortnite, or interact with anti-cheat.
         </p>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">

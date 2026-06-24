@@ -7,6 +7,7 @@ mod health;
 mod logs;
 mod network;
 mod network_diag;
+mod route_session;
 mod sysinfo;
 mod tester_profile;
 mod tunnel;
@@ -32,6 +33,9 @@ use crate::network::{NetworkError, PingResult, RouteTestResult};
 use crate::network_diag::{
     get_dns_status, run_mtu_test, run_ping_test, run_traceroute, DetailedPingResult, DnsStatus,
     MtuTestResult, TracerouteResult,
+};
+use crate::route_session::{
+    ActiveRouteSession, GeneratedRouteProfile, RouteKeys, RouteSessionError,
 };
 use crate::sysinfo::{get_network_adapter_info, get_os_info, NetworkAdapterInfo, OsInfo};
 use crate::tester_profile::{ProfileError, TesterProfile};
@@ -101,6 +105,7 @@ fn remove_config(state: tauri::State<'_, AppState>) -> Result<(), String> {
         state.logs.info("Tunnel disconnected before config removal.");
     }
     config::remove_config(&state.app_data_dir).map_err(|e: ConfigError| e.to_string())?;
+    route_session::clear_active_route_session(&state.app_data_dir).ok();
     state.logs.info("Config removed.");
     Ok(())
 }
@@ -135,6 +140,40 @@ fn restart_as_admin(state: tauri::State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 fn is_wireguard_installed() -> bool {
     tunnel::is_wireguard_installed()
+}
+
+#[tauri::command]
+fn generate_route_keys_cmd() -> Result<RouteKeys, String> {
+    route_session::generate_route_keys().map_err(|e: RouteSessionError| e.to_string())
+}
+
+#[tauri::command]
+fn save_route_session_profile_cmd(
+    state: tauri::State<'_, AppState>,
+    profile: GeneratedRouteProfile,
+) -> Result<(), String> {
+    app_state(state.clone())?;
+    route_session::save_route_profile(&state.app_data_dir, &profile)
+        .map_err(|e: RouteSessionError| e.to_string())?;
+    state.logs.info(&format!(
+        "Prepared RouteLag route session {} for {}.",
+        profile.session_id, profile.server_name
+    ));
+    Ok(())
+}
+
+#[tauri::command]
+fn load_active_route_session_cmd(
+    state: tauri::State<'_, AppState>,
+) -> Option<ActiveRouteSession> {
+    route_session::load_active_route_session(&state.app_data_dir)
+}
+
+#[tauri::command]
+fn clear_active_route_session_cmd(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    app_state(state.clone())?;
+    route_session::clear_active_route_session(&state.app_data_dir)
+        .map_err(|e: RouteSessionError| e.to_string())
 }
 
 #[tauri::command]
@@ -405,6 +444,7 @@ fn reset_app(state: tauri::State<'_, AppState>) -> Result<(), String> {
     }
 
     config::remove_config(&state.app_data_dir).ok();
+    route_session::clear_active_route_session(&state.app_data_dir).ok();
     network::remove_route_test(&state.app_data_dir);
     diagnostics::remove_diagnostics(&state.app_data_dir);
     state.logs.clear().ok();
@@ -457,6 +497,10 @@ pub fn run() {
             is_elevated,
             restart_as_admin,
             is_wireguard_installed,
+            generate_route_keys_cmd,
+            save_route_session_profile_cmd,
+            load_active_route_session_cmd,
+            clear_active_route_session_cmd,
             connect_tunnel,
             disconnect_tunnel,
             reconnect_tunnel_cmd,

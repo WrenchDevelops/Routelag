@@ -13,11 +13,17 @@
     "windows": [
       {
         "title": "RouteLag Beta",
-        "width": 960,
-        "height": 720,
-        "minWidth": 800,
-        "minHeight": 600,
-        "resizable": true
+        "width": 420,
+        "height": 540,
+        "minWidth": 420,
+        "minHeight": 540,
+        "maxWidth": 420,
+        "maxHeight": 540,
+        "resizable": false,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false
       }
     ],
     "security": {
