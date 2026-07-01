@@ -2,7 +2,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ElevationError {
-    #[error("RouteLag needs administrator permission to control the WireGuard network tunnel.")]
+    #[error(
+        "RouteLag needs administrator permission to control the RouteLag Engine route session."
+    )]
     NotElevated,
     #[error("Administrator permission was denied. RouteLag will stay in normal mode.")]
     ElevationDenied,
@@ -67,11 +69,6 @@ pub fn restart_as_admin() -> Result<(), ElevationError> {
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
-    let op: Vec<u16> = OsStr::new("open")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
     let result = unsafe {
         ShellExecuteW(
             std::ptr::null_mut(),

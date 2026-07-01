@@ -1,4 +1,4 @@
-import logoUrl from "../assets/routelag-logo-icon.png";
+import logoUrl from "../assets/routelag-logo-mark.png";
 
 export function GlowLogo() {
   return (

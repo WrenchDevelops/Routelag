@@ -1,88 +1,51 @@
-# RouteLag Beta — Windows Install
+# Windows Install
 
-## System Requirements
+RouteLag Beta includes its own RouteLag Engine. Testers do not need to install
+any separate tunnel app.
 
-- Windows 10 or Windows 11 (64-bit)
-- Internet connection
-- Administrator access (for connect/disconnect only)
+## Install
 
-## Step 1: Install WireGuard for Windows
+1. Run the RouteLag installer.
+2. Open RouteLag.
+3. Approve Administrator permission when RouteLag needs to start or stop a
+   route session.
+4. Click Restore Internet before the first test.
+5. Log in with the beta invite code.
 
-RouteLag Beta depends on the official WireGuard Windows app being installed.
+## Engine Health
 
-1. Visit [https://www.wireguard.com/install/](https://www.wireguard.com/install/)
-2. Download **WireGuard for Windows**
-3. Run the installer
-4. You do **not** need to import your config into the WireGuard GUI — RouteLag Beta manages the tunnel
+If RouteLag shows `RouteLag Engine is missing or damaged. Reinstall RouteLag.`,
+the installer did not include the required engine resources or the install is
+corrupted. Reinstall RouteLag.
 
-## Step 2: Install RouteLag Beta
+## Installer Build Checklist
 
-1. Run the RouteLag Beta installer (`RouteLag Beta_*_x64-setup.exe`)
-2. Follow the setup wizard
-3. Launch RouteLag Beta from the Start menu
+Before running `npm.cmd run tauri build`, the Windows engine folder must contain
+the bundled RouteLag Engine files:
 
-The app installs for the current user by default (`%LOCALAPPDATA%`).
-
-## Step 3: First Launch
-
-On first launch:
-
-1. The app opens in **normal mode** — no UAC prompt
-2. Go to **Settings** and import your tester `.conf` file
-3. Go to **Connect** when ready
-
-## Administrator Permission
-
-RouteLag Beta uses two modes:
-
-| Mode | When | Can do |
-|------|------|--------|
-| Normal | Default launch | Import config, ping tests, route tests, logs |
-| Admin | After UAC elevation | Connect / disconnect tunnel |
-
-When you click **Connect** in normal mode, RouteLag explains why admin is needed and offers **Restart as Administrator**.
-
-RouteLag does **not** modify Fortnite, inject into Fortnite, or interact with anti-cheat. Admin is only used to install/control the standard WireGuard tunnel Windows service.
-
-## App Data Location
-
-```
-%APPDATA%\com.routelag.beta\
-├── routelag-beta.conf
-├── routelag-beta.log
-└── route-test-latest.json
+```txt
+src-tauri/engine/windows/RouteLagEngine.exe
+src-tauri/engine/windows/routelag-wg.exe
+src-tauri/engine/windows/LICENSES/
 ```
 
-Configs are **not** stored in Program Files or inside the app install folder.
+Development builds may also use `wireguard.exe` and `wg.exe` as fallback names.
+The released installer should still present this only as RouteLag Engine and
+must not require `C:\Program Files\WireGuard`.
 
-## Building from Source
-
-Requires [Rust](https://rustup.rs/) and Node.js 18+.
+You can check the folder first:
 
 ```powershell
-cd routelag-desktop
-npm install
-npm run tauri build
+npm.cmd run check:engine:windows
 ```
 
-Output installer:
+If the binaries are missing, `npm.cmd run tauri build` fails before producing an
+installer:
 
-```
-src-tauri\target\release\bundle\nsis\
-```
+`Bundled RouteLag Engine binaries are missing. Place RouteLagEngine.exe and routelag-wg.exe in src-tauri/engine/windows before building the installer.`
 
-## Uninstall
+## Safety
 
-1. Windows **Settings → Apps → RouteLag Beta → Uninstall**
-2. Optionally delete app data: `%APPDATA%\com.routelag.beta\`
-
-If a tunnel was left connected, open RouteLag Beta as admin and click **Disconnect** before uninstalling, or run in an elevated terminal:
-
-```powershell
-& "C:\Program Files\WireGuard\wireguard.exe" /uninstalltunnelservice routelag-beta
-```
-
-## See Also
-
-- [Beta Tester Guide](BETA-TESTER-GUIDE.md)
-- [Troubleshooting](TROUBLESHOOTING.md)
+RouteLag does not modify Fortnite, inject into Fortnite, or interact with
+anti-cheat. Administrator permission is used to install/control the RouteLag
+Service route session and restore normal internet.

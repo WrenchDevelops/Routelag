@@ -5,7 +5,7 @@ interface SettingsPageProps {
   elevated: boolean;
   hasConfig: boolean;
   onBack: () => void;
-  wgInstalled: boolean;
+  engineInstalled: boolean;
   onImport: () => void;
   onRemove: () => void;
 }
@@ -17,7 +17,7 @@ export function SettingsPage({
   onBack,
   onImport,
   onRemove,
-  wgInstalled,
+  engineInstalled,
 }: SettingsPageProps) {
   return (
     <div className="settings-view">
@@ -28,7 +28,7 @@ export function SettingsPage({
         <h1>RouteLag Setup</h1>
         <InfoTile title="Route Profile" value={hasConfig ? "Ready" : "Created on Optimize"} />
         <InfoTile title="Admin" value={elevated ? "Ready" : "Required"} />
-        <InfoTile title="RouteLag Engine" value={wgInstalled ? "Ready" : "Missing"} />
+        <InfoTile title="RouteLag Engine" value={engineInstalled ? "Ready" : "Missing"} />
         <div className="tester-actions">
           <GlowButton onClick={onImport} disabled={busy === "import"}>
             {busy === "import" ? "Importing..." : "Import Legacy Profile"}

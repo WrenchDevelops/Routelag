@@ -25,7 +25,7 @@ export function ConnectPage() {
   const [status, setStatus] = useState<TunnelStatus>(defaultTunnelStatus());
   const [elevated, setElevated] = useState(false);
   const [hasConfig, setHasConfig] = useState(false);
-  const [wgInstalled, setWgInstalled] = useState(true);
+  const [engineInstalled, setEngineInstalled] = useState(true);
   const [serverName, setServerName] = useState<string | null>(null);
   const [ipBefore, setIpBefore] = useState<string>("—");
   const [ipAfter, setIpAfter] = useState<string>("—");
@@ -41,13 +41,13 @@ export function ConnectPage() {
     const [elev, cfg, wg, srv, tunnel] = await Promise.all([
       api.isElevated(),
       api.hasConfig(),
-      api.isWireguardInstalled(),
+      api.isRouteLagEngineAvailable(),
       api.getServerDisplayName(),
       api.tunnelStatus(),
     ]);
     setElevated(elev);
     setHasConfig(cfg);
-    setWgInstalled(wg);
+    setEngineInstalled(wg);
     setServerName(srv);
     setStatus(tunnel);
   }, []);
@@ -91,14 +91,11 @@ export function ConnectPage() {
 
   const handleConnect = async () => {
     if (!hasConfig) {
-      showToast("Import a WireGuard config in Settings first.", "warning");
+      showToast("Create or import a RouteLag route profile in Settings first.", "warning");
       return;
     }
-    if (!wgInstalled) {
-      showToast(
-        "Install WireGuard for Windows from wireguard.com/install",
-        "error",
-      );
+    if (!engineInstalled) {
+      showToast("RouteLag Engine is missing or damaged. Reinstall RouteLag.", "error");
       return;
     }
     if (!elevated) {
@@ -183,16 +180,16 @@ export function ConnectPage() {
     }
   };
 
-  const runEmergencyCleanup = async () => {
+  const runRestoreInternet = async () => {
     setBusy(true);
     try {
-      await api.emergencyCleanup();
+      await api.restoreInternet();
       setIpAfter("—");
       setPingAfter(null);
       await refreshMeta();
       await loadBaseline();
       await refreshHealth(ipBefore);
-      showToast("Emergency cleanup completed.", "success");
+      showToast("Restore Internet completed.", "success");
     } catch (e) {
       showToast(String(e), "error");
     } finally {
@@ -200,10 +197,10 @@ export function ConnectPage() {
     }
   };
 
-  const handleEmergencyCleanup = () => {
+  const handleRestoreInternet = () => {
     if (
       !confirm(
-        "Run Emergency Cleanup? This stops the RouteLag tunnel, uninstalls the tunnel service, and flushes DNS. WireGuard and RouteLag stay installed.",
+        "Restore Internet? This stops the RouteLag tunnel, uninstalls its route service, and flushes DNS. RouteLag stays installed.",
       )
     ) {
       return;
@@ -212,7 +209,7 @@ export function ConnectPage() {
       setAdminModalOpen(true);
       return;
     }
-    void runEmergencyCleanup();
+    void runRestoreInternet();
   };
 
   const pingWorse =
@@ -236,14 +233,13 @@ export function ConnectPage() {
 
       {!hasConfig && (
         <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-amber-100">
-          Import your tester WireGuard config in Settings before connecting.
+          Create or import a RouteLag route profile in Settings before connecting.
         </div>
       )}
 
-      {!wgInstalled && (
+      {!engineInstalled && (
         <div className="rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-red-200">
-          WireGuard for Windows is not installed. Download it from{" "}
-          <span className="font-mono">wireguard.com/install</span>.
+          RouteLag Engine is missing or damaged. Reinstall RouteLag.
         </div>
       )}
 
@@ -258,7 +254,7 @@ export function ConnectPage() {
         health={tunnelHealth}
         onReconnect={() => void handleReconnect()}
         onDisconnect={() => void handleDisconnect()}
-        onEmergencyCleanup={handleEmergencyCleanup}
+        onRestoreInternet={handleRestoreInternet}
         reconnecting={reconnecting}
         busy={busy}
       />
@@ -315,7 +311,7 @@ export function ConnectPage() {
           label="Connect"
           variant="connect"
           onClick={() => void handleConnect()}
-          disabled={!hasConfig || !wgInstalled || isConnected}
+          disabled={!hasConfig || !engineInstalled || isConnected}
           loading={busy && !isConnected}
         />
         <ConnectButton

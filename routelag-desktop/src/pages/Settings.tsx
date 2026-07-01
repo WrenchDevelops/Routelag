@@ -61,7 +61,7 @@ export function SettingsPage() {
   };
 
   const handleRemove = async () => {
-    if (!confirm("Remove the imported WireGuard config?")) return;
+    if (!confirm("Remove the imported RouteLag route profile?")) return;
     setBusy(true);
     try {
       await api.removeConfig();
@@ -94,12 +94,12 @@ export function SettingsPage() {
     }
   };
 
-  const runEmergencyCleanup = async () => {
+  const runRestoreInternet = async () => {
     setBusy(true);
     try {
-      await api.emergencyCleanup();
+      await api.restoreInternet();
       await refresh();
-      showToast("Emergency cleanup completed.", "success");
+      showToast("Restore Internet completed.", "success");
     } catch (e) {
       showToast(String(e), "error");
     } finally {
@@ -107,10 +107,10 @@ export function SettingsPage() {
     }
   };
 
-  const handleEmergencyCleanup = () => {
+  const handleRestoreInternet = () => {
     if (
       !confirm(
-        "Run Emergency Cleanup? This stops the RouteLag tunnel, uninstalls the tunnel service, and flushes DNS. WireGuard and RouteLag stay installed. Your config file is not removed.",
+        "Restore Internet? This stops the RouteLag tunnel, uninstalls its route service, and flushes DNS. RouteLag stays installed.",
       )
     ) {
       return;
@@ -119,7 +119,7 @@ export function SettingsPage() {
       setAdminModalOpen(true);
       return;
     }
-    void runEmergencyCleanup();
+    void runRestoreInternet();
   };
 
   const handleRestartAsAdmin = async () => {
@@ -146,7 +146,7 @@ export function SettingsPage() {
       </div>
 
       <section className="rounded-xl border border-border bg-card p-4">
-        <h2 className="text-sm font-medium text-white">WireGuard config</h2>
+        <h2 className="text-sm font-medium text-white">RouteLag route profile</h2>
         <p className="mt-1 text-sm text-muted">
           Status: {hasConfig ? "Imported" : "Not imported"}
         </p>
@@ -249,17 +249,16 @@ export function SettingsPage() {
       <section className="rounded-xl border border-error/30 bg-card p-4">
         <h2 className="text-sm font-medium text-white">Recovery</h2>
         <p className="mt-1 text-sm text-muted">
-          Stop the tunnel and restore normal internet without uninstalling
-          WireGuard or RouteLag.
+          Stop the tunnel and restore normal internet without uninstalling RouteLag.
         </p>
         <div className="mt-4">
           <button
             type="button"
-            onClick={handleEmergencyCleanup}
+            onClick={handleRestoreInternet}
             disabled={busy}
             className="rounded-lg border border-error/40 px-4 py-2 text-sm text-red-200 hover:bg-error/10 disabled:opacity-50"
           >
-            Emergency Cleanup
+            Restore Internet
           </button>
         </div>
       </section>

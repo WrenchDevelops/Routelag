@@ -1,0 +1,5 @@
+RouteLag Engine includes bundled tunnel components for RouteLag routing.
+
+These components are bundled so RouteLag users do not need to install a separate WireGuard application.
+
+Third-party license/attribution files for bundled networking components should be kept here.

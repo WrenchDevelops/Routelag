@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::network::get_public_ip;
 use crate::network_diag::lightweight_ping_ok;
-use crate::tunnel::{self, WireGuardStatus};
+use crate::route_lag_engine::RouteLagEngine;
+use crate::tunnel::{self, RouteLagEngineRuntimeStatus};
 
 const HANDSHAKE_STALE_SECS: u64 = 180;
 const FAIL_THRESHOLD: u32 = 3;
@@ -34,6 +35,7 @@ fn is_valid_baseline_ip(ip: &str) -> bool {
 
 pub fn get_tunnel_health(
     tracker: &Mutex<StabilityTracker>,
+    engine: &RouteLagEngine,
     baseline_public_ip: Option<&str>,
 ) -> TunnelHealth {
     let status = tunnel::tunnel_status();
@@ -55,14 +57,13 @@ pub fn get_tunnel_health(
         };
     }
 
-    let wg = tunnel::get_wireguard_status();
-    let service_running = wg
-        .service_status
-        .to_uppercase()
-        .contains("RUNNING")
-        || status.is_connected();
+    let wg = tunnel::get_route_lag_engine_runtime_status(engine);
+    let service_running =
+        wg.service_status.to_uppercase().contains("RUNNING") || status.is_connected();
     let handshake_secs = wg.latest_handshake_secs_ago;
-    let handshake_recent = handshake_secs.map(|s| s < HANDSHAKE_STALE_SECS).unwrap_or(false);
+    let handshake_recent = handshake_secs
+        .map(|s| s < HANDSHAKE_STALE_SECS)
+        .unwrap_or(false);
     let ping_ok = lightweight_ping_ok();
 
     let public_ip_changed = if status.is_connected() {
@@ -78,8 +79,7 @@ pub fn get_tunnel_health(
         None
     };
 
-    let stuck_tunnel = status.is_connected()
-        && (!ping_ok || public_ip_changed == Some(false));
+    let stuck_tunnel = status.is_connected() && (!ping_ok || public_ip_changed == Some(false));
 
     let check_failed = !service_running || !handshake_recent || !ping_ok;
 
@@ -105,11 +105,11 @@ pub fn get_tunnel_health(
     } else if reconnect_recommended {
         "Reconnect Recommended — tunnel checks failed multiple times in a row.".to_string()
     } else if !handshake_recent {
-        "No recent WireGuard handshake. UDP 51820 may be blocked.".to_string()
+        "No recent RouteLag Engine handshake. UDP 51820 may be blocked.".to_string()
     } else if !ping_ok {
         "Internet ping through tunnel failed.".to_string()
     } else if !service_running {
-        "WireGuard tunnel service is not running.".to_string()
+        "RouteLag Service is not running.".to_string()
     } else {
         "Tunnel is stable.".to_string()
     };
@@ -134,7 +134,7 @@ pub fn reset_stability(tracker: &Mutex<StabilityTracker>) {
     }
 }
 
-pub fn handshake_is_recent(wg: &WireGuardStatus) -> bool {
+pub fn handshake_is_recent(wg: &RouteLagEngineRuntimeStatus) -> bool {
     wg.latest_handshake_secs_ago
         .map(|s| s < HANDSHAKE_STALE_SECS)
         .unwrap_or(false)

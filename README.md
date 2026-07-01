@@ -1,12 +1,11 @@
-# RouteLag MVP
+# RouteLag Beta
 
-A one-server RouteLag routing tunnel MVP using an Ubuntu 24.04 VPS and a
-Windows desktop beta app.
+Private Windows desktop beta for targeted Fortnite route testing.
 
-Normal tester flow:
+Current beta tester flow:
 
 ```text
-Login -> Select Fortnite -> Select Johannesburg Beta -> Optimize
+Login -> Select Fortnite -> Test Johannesburg / Frankfurt / London / Amsterdam
 ```
 
 The desktop app creates the RouteLag route session automatically. Testers should
@@ -15,24 +14,31 @@ not need to import tunnel files manually.
 ## Architecture
 
 ```text
-User PC -> RouteLag Engine -> VPS -> Internet / game servers
+User PC -> RouteLag Engine -> selected RouteLag VPS -> targeted game IPs
 ```
 
-Current dev server:
+Current South Africa to Middle East beta routes:
 
-- VPS: `102.211.56.103`
-- Server name: Johannesburg Beta
+- Johannesburg Beta
+- Frankfurt Beta
+- London Beta
+- Amsterdam Beta, or Paris if that server was purchased instead
+
+Shared beta scope:
+
 - Game: Fortnite
+- Fortnite matchmaking region: Middle East
 - Tunnel network: `10.66.66.0/24`
 - Tunnel port: UDP `51820`
+- Route mode: targeted IPv4 `/32` AllowedIPs only
 
 ## What This Does
 
-- Installs the tunnel server on an Ubuntu 24.04 VPS
-- Creates a full-tunnel route (`AllowedIPs = 0.0.0.0/0`) so traffic exits through the VPS
+- Installs RouteLag tunnel servers on Ubuntu 24.04 VPS nodes
+- Creates targeted host routes for configured Fortnite destination IPs
 - Provides a RouteLag API for invite-code login and automatic route sessions
 - Lets the desktop app create hidden local RouteLag Engine profiles
-- Provides bash scripts for install, status, uninstall, and legacy manual client creation
+- Provides bash scripts for install, status, uninstall, and operator testing
 
 ## What This Does Not Do
 
@@ -41,15 +47,14 @@ Current dev server:
 - Per-game packet filtering
 - DDoS protection or anti-cheat bypass
 - Guaranteed lower ping
+- Full-device VPN routing
 
-## Why One VPS Is Not Full ExitLag
+## Private Beta Goal
 
-ExitLag and similar services use many servers worldwide, intelligent routing,
-and protocol optimization to find the lowest-latency path to game servers.
-
-This MVP sends traffic through one VPS. If that VPS is far from the tester or
-far from the game servers, ping can get worse. Use Johannesburg Beta to prove
-the automatic RouteLag session flow before adding better regional servers.
+This beta does not try to prove that RouteLag always lowers ping. It compares
+RouteLag OFF, Johannesburg, Frankfurt, London, and Amsterdam/Paris to find which
+route gives South African Fortnite players the best Middle East server
+stability for their ISP.
 
 ## Server Setup
 
@@ -74,7 +79,8 @@ npm run dev
 ```
 
 Deploy it on the VPS with `ROUTELAG_PEER_MODE=wg` after `wg0` is active and the
-server public key is configured.
+server public key, endpoint, and captured Fortnite Middle East `/32` AllowedIPs
+are configured.
 
 ## Desktop App
 

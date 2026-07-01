@@ -4,7 +4,7 @@ interface StuckTunnelBannerProps {
   health: TunnelHealth | null;
   onReconnect: () => void;
   onDisconnect: () => void;
-  onEmergencyCleanup: () => void;
+  onRestoreInternet: () => void;
   reconnecting?: boolean;
   busy?: boolean;
 }
@@ -13,7 +13,7 @@ export function StuckTunnelBanner({
   health,
   onReconnect,
   onDisconnect,
-  onEmergencyCleanup,
+  onRestoreInternet,
   reconnecting,
   busy,
 }: StuckTunnelBannerProps) {
@@ -41,11 +41,11 @@ export function StuckTunnelBanner({
         </button>
         <button
           type="button"
-          onClick={onEmergencyCleanup}
+          onClick={onRestoreInternet}
           disabled={busy}
           className="rounded-lg border border-error/40 px-4 py-2 text-sm text-red-200 hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Emergency Cleanup
+          Restore Internet
         </button>
       </div>
     </div>

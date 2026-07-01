@@ -1,12 +1,11 @@
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::{self, ConfigIdentity};
+use crate::route_lag_engine::{RouteLagEngine, RouteLagEngineError, ENGINE_MISSING_MESSAGE};
 
 const ROUTE_SESSION_FILENAME: &str = "route-session.json";
 
@@ -39,7 +38,7 @@ pub struct ActiveRouteSession {
 
 #[derive(Debug, Error)]
 pub enum RouteSessionError {
-    #[error("RouteLag Engine tooling is not installed. Install WireGuard for Windows, then try again.")]
+    #[error("{ENGINE_MISSING_MESSAGE}")]
     EngineNotInstalled,
     #[error("RouteLag route sessions are only available on Windows for this beta.")]
     UnsupportedPlatform,
@@ -49,47 +48,28 @@ pub enum RouteSessionError {
     SaveFailed(String),
 }
 
-pub fn generate_route_keys() -> Result<RouteKeys, RouteSessionError> {
+impl From<RouteLagEngineError> for RouteSessionError {
+    fn from(value: RouteLagEngineError) -> Self {
+        match value {
+            RouteLagEngineError::Missing => RouteSessionError::EngineNotInstalled,
+            RouteLagEngineError::OperationFailed(message) => {
+                RouteSessionError::KeyGenerationFailed(message)
+            }
+        }
+    }
+}
+
+pub fn generate_route_keys(engine: &RouteLagEngine) -> Result<RouteKeys, RouteSessionError> {
     #[cfg(not(windows))]
     {
+        let _ = engine;
         return Err(RouteSessionError::UnsupportedPlatform);
     }
 
     #[cfg(windows)]
     {
-        let wg = wg_exe().ok_or(RouteSessionError::EngineNotInstalled)?;
-        let private_output = Command::new(&wg)
-            .arg("genkey")
-            .output()
-            .map_err(|e| RouteSessionError::KeyGenerationFailed(e.to_string()))?;
-        if !private_output.status.success() {
-            return Err(RouteSessionError::KeyGenerationFailed(
-                String::from_utf8_lossy(&private_output.stderr).trim().to_string(),
-            ));
-        }
-        let private_key = String::from_utf8_lossy(&private_output.stdout).trim().to_string();
-
-        let mut child = Command::new(&wg)
-            .arg("pubkey")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| RouteSessionError::KeyGenerationFailed(e.to_string()))?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin
-                .write_all(private_key.as_bytes())
-                .map_err(|e| RouteSessionError::KeyGenerationFailed(e.to_string()))?;
-        }
-        let public_output = child
-            .wait_with_output()
-            .map_err(|e| RouteSessionError::KeyGenerationFailed(e.to_string()))?;
-        if !public_output.status.success() {
-            return Err(RouteSessionError::KeyGenerationFailed(
-                String::from_utf8_lossy(&public_output.stderr).trim().to_string(),
-            ));
-        }
-        let public_key = String::from_utf8_lossy(&public_output.stdout).trim().to_string();
+        let private_key = engine.generate_private_key()?;
+        let public_key = engine.public_key_for_private_key(&private_key)?;
         Ok(RouteKeys {
             private_key,
             public_key,
@@ -154,22 +134,4 @@ pub fn clear_active_route_session(app_data_dir: &Path) -> Result<(), RouteSessio
 
 fn route_session_path(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join(ROUTE_SESSION_FILENAME)
-}
-
-#[cfg(windows)]
-fn wg_exe() -> Option<PathBuf> {
-    let candidates = [
-        std::env::var("ProgramFiles")
-            .ok()
-            .map(|p| PathBuf::from(p).join("WireGuard").join("wg.exe")),
-        std::env::var("ProgramFiles(x86)")
-            .ok()
-            .map(|p| PathBuf::from(p).join("WireGuard").join("wg.exe")),
-    ];
-    for candidate in candidates.into_iter().flatten() {
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
 }

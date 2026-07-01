@@ -1,27 +1,37 @@
 # RouteLag Routing Tunnel
 
-This is the one-server RouteLag MVP route tunnel.
+This is the RouteLag private beta route tunnel.
 
 Normal tester flow:
 
 ```text
-Login -> Select Fortnite -> Select Johannesburg Beta -> Optimize
+Login -> Select Fortnite -> Select beta route -> Optimize
 ```
 
 The tester does not import tunnel files manually. The desktop app creates a
 local keypair, sends only the public key to the RouteLag API, receives route
 details, writes a hidden local RouteLag Engine profile, and starts the route.
 
-## Current Dev Server
+## South Africa to Middle East Beta Servers
 
-- VPS: `102.211.56.103`
-- Name: Johannesburg Beta
+- Johannesburg Beta
+- Frankfurt Beta
+- London Beta
+- Amsterdam Beta, or Paris if that server was purchased instead
+
+Each route is configured independently by the API. A route should only be marked
+online when its endpoint, server public key, and captured Fortnite Middle East
+IPv4 `/32` AllowedIPs are configured.
+
+## Tunnel Defaults
+
 - OS: Ubuntu 24
 - Tunnel network: `10.66.66.0/24`
 - Server tunnel IP: `10.66.66.1`
 - Route port: UDP `51820`
 - Default DNS: `1.1.1.1`
 - Default MTU: `1280`
+- Full tunnel routes such as `0.0.0.0/0` and `::/0` are blocked.
 
 ## Pieces
 
@@ -81,16 +91,9 @@ sysctl net.ipv4.ip_forward
 iptables -t nat -S POSTROUTING
 ```
 
-## Why Johannesburg Beta Is Dev Only
+## Private Beta Goal
 
-Johannesburg Beta proves the automatic route-session system works. It may not
-lower Fortnite ping for testers far from South Africa or far from the selected
-Fortnite region. For a real low-latency product, RouteLag needs regional
-servers close to both testers and game infrastructure.
-
-## Why NA-Central/Dallas Is Needed Later
-
-Fortnite has important U.S. routing through central/east/west regions. A Dallas
-or NA-Central RouteLag server is the likely next practical test node because it
-can be closer to many U.S. testers and relevant Fortnite paths than the
-Johannesburg dev VPS.
+The beta compares RouteLag OFF, Johannesburg, Frankfurt, London, and
+Amsterdam/Paris for South African Fortnite players using the Middle East
+matchmaking region. The winning route is the best combination of low ping, low
+packet loss, fewer spikes, and stable gameplay for the tester's ISP.

@@ -70,7 +70,8 @@ export function DiagnosticsPage() {
       const result = await api.runFullDiagnostics({
         disconnectForNormal,
         includePublicIp,
-        skipTunnelPhase: false,
+        skipTunnelPhase: true,
+        includeTraceroute: false,
       });
       setReport(result);
       setMtu(result.mtu);
@@ -94,11 +95,6 @@ export function DiagnosticsPage() {
   };
 
   const handleRunClick = async () => {
-    const status = await api.tunnelStatus();
-    if (status.state === "connected" || status.state === "connecting") {
-      setDisconnectModal(true);
-      return;
-    }
     await runDiagnostics(false);
   };
 
@@ -284,8 +280,8 @@ export function DiagnosticsPage() {
 
       {running && (
         <p className="text-sm text-accent cursor-wait">
-          Testing normal route, then RouteLag tunnel, MTU, and machine info.
-          This may take a few minutes.
+          Testing the current route, DNS, MTU, and machine info. This run does
+          not connect or disconnect RouteLag.
         </p>
       )}
 
@@ -295,7 +291,7 @@ export function DiagnosticsPage() {
 
       {report?.wireguard && (
         <div className="rounded-xl border border-border bg-card p-4">
-          <h3 className="text-sm font-medium text-white">WireGuard tunnel</h3>
+          <h3 className="text-sm font-medium text-white">RouteLag Engine</h3>
           <div className="mt-3 grid gap-2 font-mono text-xs text-gray-300 sm:grid-cols-2">
             {report.wireguard.endpoint && (
               <p>Endpoint: {report.wireguard.endpoint}</p>
@@ -346,9 +342,8 @@ export function DiagnosticsPage() {
               Disconnect for normal route test?
             </h2>
             <p className="mt-3 text-sm text-gray-300">
-              Full diagnostics needs your normal internet path first. RouteLag
-              will temporarily disconnect the tunnel, then reconnect for the
-              tunnel phase.
+              Diagnostics no longer disconnects or reconnects RouteLag by
+              default. Use Restore Internet first if the tunnel is stuck.
             </p>
             <div className="mt-6 flex justify-end gap-2">
               <button
@@ -363,7 +358,7 @@ export function DiagnosticsPage() {
                 onClick={() => void runDiagnostics(true)}
                 className="rounded-lg bg-accent px-4 py-2 text-sm text-white"
               >
-                Disconnect and continue
+                Run safe diagnostics
               </button>
             </div>
           </div>

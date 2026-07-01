@@ -2,6 +2,7 @@ use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::elevation;
+use crate::route_lag_engine::RouteLagEngine;
 use crate::tunnel;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +16,8 @@ pub struct OsInfo {
     pub is_admin: bool,
     pub wireguard_installed: bool,
     pub wireguard_exe_path: Option<String>,
+    pub route_lag_engine_available: bool,
+    pub route_lag_engine_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,8 +26,10 @@ pub struct NetworkAdapterInfo {
     pub connection_type: Option<String>,
 }
 
-pub fn get_os_info(app_version: &str) -> OsInfo {
+pub fn get_os_info(app_version: &str, engine: &RouteLagEngine) -> OsInfo {
     let _ = app_version;
+    let engine_available = tunnel::is_route_lag_engine_available(engine);
+    let engine_path = tunnel::route_lag_engine_path(engine).map(|p| p.display().to_string());
     OsInfo {
         os_name: detect_os_name(),
         os_version: detect_os_version(),
@@ -33,8 +38,10 @@ pub fn get_os_info(app_version: &str) -> OsInfo {
         local_datetime: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         timezone: detect_timezone(),
         is_admin: elevation::is_elevated(),
-        wireguard_installed: tunnel::is_wireguard_installed(),
-        wireguard_exe_path: tunnel::wireguard_exe_path().map(|p| p.display().to_string()),
+        wireguard_installed: engine_available,
+        wireguard_exe_path: engine_path.clone(),
+        route_lag_engine_available: engine_available,
+        route_lag_engine_path: engine_path,
     }
 }
 
@@ -61,10 +68,7 @@ fn detect_os_version() -> String {
     {
         use std::process::Command;
         if let Ok(output) = Command::new("sw_vers").arg("-productVersion").output() {
-            return format!(
-                "macOS {}",
-                String::from_utf8_lossy(&output.stdout).trim()
-            );
+            return format!("macOS {}", String::from_utf8_lossy(&output.stdout).trim());
         }
     }
     "Unknown".to_string()

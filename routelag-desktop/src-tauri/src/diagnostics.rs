@@ -1,21 +1,22 @@
 use std::fs;
 use std::path::Path;
-use std::time::Duration;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::beta_report::{self, BetaReportSnapshot};
 use crate::config::{self, redact_secrets, ConfigIdentity};
-use crate::tester_profile::{self, TesterProfile};
 use crate::health::handshake_is_recent;
 use crate::network::get_public_ip;
 use crate::network_diag::{
-    get_dns_status, run_mtu_test, run_ping_test, run_traceroute, DetailedPingResult,
-    DnsStatus, MtuTestResult, TracerouteResult, DIAG_PING_HOSTS, DIAG_TRACEROUTE_HOSTS,
+    get_dns_status, run_mtu_test, run_ping_test, run_traceroute, DetailedPingResult, DnsStatus,
+    MtuTestResult, TracerouteResult, DIAG_PING_HOSTS, DIAG_TRACEROUTE_HOSTS,
 };
+use crate::route_lag_engine::RouteLagEngine;
 use crate::sysinfo::{get_network_adapter_info, get_os_info, NetworkAdapterInfo, OsInfo};
-use crate::tunnel::{self, WireGuardStatus};
+use crate::tester_profile::{self, TesterProfile};
+use crate::tunnel::{self, RouteLagEngineRuntimeStatus};
 
 pub const DIAGNOSTICS_FILENAME: &str = "diagnostics-latest.json";
 pub const REPORT_TEXT_FILENAME: &str = "routelag-report.txt";
@@ -48,7 +49,7 @@ pub struct DiagnosticsReport {
     pub routelag_route: Option<RouteSnapshot>,
     pub machine: OsInfo,
     pub network_adapter: NetworkAdapterInfo,
-    pub wireguard: Option<WireGuardStatus>,
+    pub wireguard: Option<RouteLagEngineRuntimeStatus>,
     pub mtu: MtuTestResult,
     pub route_score: String,
     pub recommendation: String,
@@ -58,6 +59,8 @@ pub struct DiagnosticsReport {
     pub tester_profile: Option<TesterProfile>,
     #[serde(default)]
     pub config_identity: Option<ConfigIdentity>,
+    #[serde(default)]
+    pub beta_report: Option<BetaReportSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +84,8 @@ pub struct RunDiagnosticsOptions {
     pub disconnect_for_normal: bool,
     pub include_public_ip: bool,
     pub skip_tunnel_phase: bool,
+    #[serde(default)]
+    pub include_traceroute: bool,
 }
 
 impl Default for RunDiagnosticsOptions {
@@ -89,11 +94,16 @@ impl Default for RunDiagnosticsOptions {
             disconnect_for_normal: false,
             include_public_ip: true,
             skip_tunnel_phase: false,
+            include_traceroute: false,
         }
     }
 }
 
-pub fn collect_route_snapshot(label: &str, include_public_ip: bool) -> RouteSnapshot {
+pub fn collect_route_snapshot(
+    label: &str,
+    include_public_ip: bool,
+    include_traceroute: bool,
+) -> RouteSnapshot {
     let public_ip = if include_public_ip {
         get_public_ip().ok()
     } else {
@@ -108,9 +118,11 @@ pub fn collect_route_snapshot(label: &str, include_public_ip: bool) -> RouteSnap
     }
 
     let mut traceroutes = Vec::new();
-    for host in DIAG_TRACEROUTE_HOSTS {
-        if let Ok(t) = run_traceroute(host) {
-            traceroutes.push(t);
+    if include_traceroute {
+        for host in DIAG_TRACEROUTE_HOSTS {
+            if let Ok(t) = run_traceroute(host) {
+                traceroutes.push(t);
+            }
         }
     }
 
@@ -127,56 +139,45 @@ pub fn collect_route_snapshot(label: &str, include_public_ip: bool) -> RouteSnap
 
 pub fn run_full_diagnostics(
     app_data_dir: &Path,
+    engine: &RouteLagEngine,
     app_version: &str,
     options: RunDiagnosticsOptions,
 ) -> Result<DiagnosticsReport, DiagnosticsError> {
     let status = tunnel::tunnel_status();
     let was_connected = status.is_connected() || status.is_connecting();
 
-    if was_connected && !options.disconnect_for_normal {
-        return Err(DiagnosticsError::NeedsDisconnect);
-    }
-
-    if was_connected && options.disconnect_for_normal {
-        if crate::elevation::is_elevated() {
-            let _ = tunnel::disconnect_tunnel();
-            std::thread::sleep(Duration::from_secs(2));
-        }
-    }
-
-    let normal_route = collect_route_snapshot("normal", options.include_public_ip);
+    let normal_route = collect_route_snapshot(
+        if was_connected { "current" } else { "normal" },
+        options.include_public_ip,
+        options.include_traceroute,
+    );
 
     let mut routelag_route = None;
     let mut wireguard = None;
 
     if !options.skip_tunnel_phase {
-        if !tunnel::tunnel_status().is_connected() {
-            if crate::elevation::is_elevated() && crate::config::has_config(app_data_dir) {
-                tunnel::connect_tunnel(app_data_dir).map_err(|e| {
-                    DiagnosticsError::Failed(format!("Could not connect tunnel: {e}"))
-                })?;
-                tunnel::wait_for_handshake(Duration::from_secs(45));
-            } else if !tunnel::tunnel_status().is_connected() {
-                return Err(DiagnosticsError::NeedsConnect);
-            }
-        }
-
         if tunnel::tunnel_status().is_connected() {
             routelag_route = Some(collect_route_snapshot(
                 "routelag",
                 options.include_public_ip,
+                options.include_traceroute,
             ));
-            wireguard = Some(tunnel::get_wireguard_status());
+            wireguard = Some(tunnel::get_route_lag_engine_runtime_status(engine));
         }
     }
 
     let mtu = run_mtu_test();
-    let machine = get_os_info(app_version);
+    let machine = get_os_info(app_version, engine);
     let network_adapter = get_network_adapter_info();
 
     let comparison = build_comparison(&normal_route, routelag_route.as_ref());
-    let (route_score, recommendation) =
-        compute_score_and_recommendation(&normal_route, routelag_route.as_ref(), wireguard.as_ref(), &mtu, &comparison);
+    let (route_score, recommendation) = compute_score_and_recommendation(
+        &normal_route,
+        routelag_route.as_ref(),
+        wireguard.as_ref(),
+        &mtu,
+        &comparison,
+    );
 
     let report = DiagnosticsReport {
         generated_at: Utc::now().to_rfc3339(),
@@ -201,6 +202,7 @@ pub fn run_full_diagnostics(
             }
         },
         config_identity: config::get_config_identity(app_data_dir),
+        beta_report: beta_report::load_snapshot(app_data_dir),
     };
 
     save_report(app_data_dir, &report)?;
@@ -211,7 +213,10 @@ fn build_comparison(normal: &RouteSnapshot, tunnel: Option<&RouteSnapshot>) -> R
     let normal_ping = ping_for_host(normal, "1.1.1.1");
     let tunnel_ping = tunnel.and_then(|t| ping_for_host(t, "1.1.1.1"));
 
-    let ping_delta_ms = match (normal_ping.and_then(|p| p.avg_ms), tunnel_ping.and_then(|p| p.avg_ms)) {
+    let ping_delta_ms = match (
+        normal_ping.and_then(|p| p.avg_ms),
+        tunnel_ping.and_then(|p| p.avg_ms),
+    ) {
         (Some(n), Some(t)) => Some(t - n),
         _ => None,
     };
@@ -222,7 +227,10 @@ fn build_comparison(normal: &RouteSnapshot, tunnel: Option<&RouteSnapshot>) -> R
         tunnel_avg_ping_ms: tunnel_ping.and_then(|p| p.avg_ms),
         normal_packet_loss_pct: normal_ping.map(|p| p.packet_loss_pct),
         tunnel_packet_loss_pct: tunnel_ping.map(|p| p.packet_loss_pct),
-        public_ip_changed: match (normal.public_ip.as_ref(), tunnel.map(|t| t.public_ip.as_ref())) {
+        public_ip_changed: match (
+            normal.public_ip.as_ref(),
+            tunnel.map(|t| t.public_ip.as_ref()),
+        ) {
             (Some(n), Some(Some(t))) => n != t,
             _ => false,
         },
@@ -234,9 +242,9 @@ fn ping_for_host<'a>(snap: &'a RouteSnapshot, host: &str) -> Option<&'a Detailed
 }
 
 pub fn compute_score_and_recommendation(
-    normal: &RouteSnapshot,
+    _normal: &RouteSnapshot,
     tunnel: Option<&RouteSnapshot>,
-    wg: Option<&WireGuardStatus>,
+    wg: Option<&RouteLagEngineRuntimeStatus>,
     mtu: &MtuTestResult,
     comparison: &RouteComparison,
 ) -> (String, String) {
@@ -264,7 +272,7 @@ pub fn compute_score_and_recommendation(
     }
     if handshake_bad {
         issues.push("handshake");
-        recs.push("No recent WireGuard handshake. UDP 51820 may be blocked.".to_string());
+        recs.push("No recent RouteLag Engine handshake. UDP 51820 may be blocked.".to_string());
     }
     if mtu.best_mtu.is_none() || mtu.recommended_mtu <= 1280 {
         recs.push("MTU may be too high. Try MTU 1280.".to_string());
@@ -280,7 +288,9 @@ pub fn compute_score_and_recommendation(
     } else if !issues.is_empty() && (issues.contains(&"handshake") || tunnel_loss > 10.0) {
         "Bad".to_string()
     } else if delta > 50.0 {
-        recs.push("Tunnel is stable, but server is too far away for Fortnite NA Central.".to_string());
+        recs.push(
+            "Tunnel is stable, but server is too far away for Fortnite NA Central.".to_string(),
+        );
         "Worse Than Normal".to_string()
     } else if delta > 35.0 {
         recs.push("Tunnel works but ping is noticeably higher than your normal route.".to_string());
@@ -312,7 +322,10 @@ pub fn compute_score_and_recommendation(
     (score, recommendation)
 }
 
-pub fn save_report(app_data_dir: &Path, report: &DiagnosticsReport) -> Result<(), DiagnosticsError> {
+pub fn save_report(
+    app_data_dir: &Path,
+    report: &DiagnosticsReport,
+) -> Result<(), DiagnosticsError> {
     fs::create_dir_all(app_data_dir).map_err(|e| DiagnosticsError::Failed(e.to_string()))?;
     let json_path = app_data_dir.join(DIAGNOSTICS_FILENAME);
     let json = serde_json::to_string_pretty(report)
@@ -341,7 +354,10 @@ pub fn build_report_text(report: &DiagnosticsReport) -> String {
     out.push_str(&format!("{}\n\n", report.privacy_warning));
 
     out.push_str("--- Machine ---\n");
-    out.push_str(&format!("OS: {} {}\n", report.machine.os_name, report.machine.os_version));
+    out.push_str(&format!(
+        "OS: {} {}\n",
+        report.machine.os_name, report.machine.os_version
+    ));
     if let Some(cpu) = &report.machine.cpu_name {
         out.push_str(&format!("CPU: {cpu}\n"));
     }
@@ -349,7 +365,10 @@ pub fn build_report_text(report: &DiagnosticsReport) -> String {
         out.push_str(&format!("RAM: {ram:.1} GB\n"));
     }
     out.push_str(&format!("Admin: {}\n", report.machine.is_admin));
-    out.push_str(&format!("WireGuard installed: {}\n", report.machine.wireguard_installed));
+    out.push_str(&format!(
+        "RouteLag Engine available: {}\n",
+        report.machine.route_lag_engine_available
+    ));
     if let Some(adapter) = &report.network_adapter.adapter_name {
         out.push_str(&format!("Network adapter: {adapter}\n"));
     }
@@ -382,7 +401,7 @@ pub fn build_report_text(report: &DiagnosticsReport) -> String {
     }
 
     if let Some(profile) = &report.tester_profile {
-        out.push_str("\n--- Tester Profile ---\n");
+        out.push_str("\n--- Tester Notes ---\n");
         out.push_str(&format!(
             "Tester name: {}\n",
             empty_as_not_provided(&profile.tester_name)
@@ -395,22 +414,75 @@ pub fn build_report_text(report: &DiagnosticsReport) -> String {
             "State/country: {}\n",
             empty_as_not_provided(&profile.state_country)
         ));
+        out.push_str(&format!(
+            "Country/city: {}\n",
+            empty_as_not_provided(&profile.country_city)
+        ));
         out.push_str(&format!("ISP: {}\n", empty_as_not_provided(&profile.isp)));
         out.push_str(&format!(
             "Connection type: {}\n",
             empty_as_not_provided(&profile.connection_type)
         ));
         out.push_str(&format!(
-            "Normal Fortnite ping: {}\n",
+            "RouteLag OFF ping: {}\n",
             profile
                 .normal_fortnite_ping_ms
                 .map(|v| format!("{v} ms"))
                 .unwrap_or_else(|| "not provided".to_string())
         ));
         out.push_str(&format!(
-            "RouteLag Fortnite ping: {}\n",
+            "RouteLag OFF packet loss: {}\n",
+            profile
+                .normal_fortnite_packet_loss_pct
+                .map(|v| format!("{v}%"))
+                .unwrap_or_else(|| "not provided".to_string())
+        ));
+        out.push_str(&format!(
+            "RouteLag ON ping: {}\n",
             profile
                 .routelag_fortnite_ping_ms
+                .map(|v| format!("{v} ms"))
+                .unwrap_or_else(|| "not provided".to_string())
+        ));
+        out.push_str(&format!(
+            "RouteLag ON packet loss: {}\n",
+            profile
+                .routelag_fortnite_packet_loss_pct
+                .map(|v| format!("{v}%"))
+                .unwrap_or_else(|| "not provided".to_string())
+        ));
+        out.push_str(&format!(
+            "Johannesburg ping: {}\n",
+            profile
+                .johannesburg_fortnite_ping_ms
+                .map(|v| format!("{v} ms"))
+                .unwrap_or_else(|| "not provided".to_string())
+        ));
+        out.push_str(&format!(
+            "Frankfurt ping: {}\n",
+            profile
+                .frankfurt_fortnite_ping_ms
+                .map(|v| format!("{v} ms"))
+                .unwrap_or_else(|| "not provided".to_string())
+        ));
+        out.push_str(&format!(
+            "London ping: {}\n",
+            profile
+                .london_fortnite_ping_ms
+                .map(|v| format!("{v} ms"))
+                .unwrap_or_else(|| "not provided".to_string())
+        ));
+        out.push_str(&format!(
+            "Amsterdam ping: {}\n",
+            profile
+                .amsterdam_fortnite_ping_ms
+                .map(|v| format!("{v} ms"))
+                .unwrap_or_else(|| "not provided".to_string())
+        ));
+        out.push_str(&format!(
+            "Paris ping: {}\n",
+            profile
+                .paris_fortnite_ping_ms
                 .map(|v| format!("{v} ms"))
                 .unwrap_or_else(|| "not provided".to_string())
         ));
@@ -419,9 +491,140 @@ pub fn build_report_text(report: &DiagnosticsReport) -> String {
             empty_as_not_provided(&profile.fortnite_region)
         ));
         out.push_str(&format!(
+            "Packet loss notes: {}\n",
+            empty_as_not_provided(&profile.packet_loss_notes)
+        ));
+        out.push_str(&format!(
+            "Best route: {}\n",
+            empty_as_not_provided(&profile.best_route)
+        ));
+        out.push_str(&format!(
+            "Any issues: {}\n",
+            empty_as_not_provided(&profile.any_issues)
+        ));
+        out.push_str(&format!(
+            "Did it feel smoother: {}\n",
+            empty_as_not_provided(&profile.felt_smoother)
+        ));
+        out.push_str(&format!(
+            "Did internet break: {}\n",
+            empty_as_not_provided(&profile.internet_broke)
+        ));
+        out.push_str(&format!(
+            "Did End Optimization work: {}\n",
+            empty_as_not_provided(&profile.end_optimization_worked)
+        ));
+        out.push_str(&format!(
             "Notes: {}\n",
             empty_as_not_provided(&profile.notes)
         ));
+    }
+
+    if let Some(beta) = &report.beta_report {
+        out.push_str("\n--- Private Beta Route Session ---\n");
+        out.push_str(&format!(
+            "API URL: {}\n",
+            empty_as_not_provided(&beta.api_url)
+        ));
+        out.push_str(&format!(
+            "Tester ID: {}\n",
+            beta.tester_id.as_deref().unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Invite code: {}\n",
+            beta.invite_code.as_deref().unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Selected game: {}\n",
+            empty_as_not_provided(&beta.selected_game)
+        ));
+        out.push_str(&format!(
+            "Selected server: {}\n",
+            empty_as_not_provided(&beta.selected_server)
+        ));
+        out.push_str(&format!(
+            "All tested servers: {}\n",
+            if beta.all_tested_servers.is_empty() {
+                "not provided".to_string()
+            } else {
+                beta.all_tested_servers.join(", ")
+            }
+        ));
+        out.push_str(&format!(
+            "Allowed IPs returned by API: {}\n",
+            if beta.allowed_ips_returned.is_empty() {
+                "not provided".to_string()
+            } else {
+                beta.allowed_ips_returned.join(", ")
+            }
+        ));
+        out.push_str(&format!(
+            "Route mode: {}\n",
+            empty_as_not_provided(&beta.route_mode)
+        ));
+        out.push_str(&format!(
+            "Assigned tunnel IP: {}\n",
+            beta.assigned_tunnel_ip.as_deref().unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Session ID: {}\n",
+            beta.session_id.as_deref().unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Optimize start time: {}\n",
+            beta.optimize_start_time
+                .as_deref()
+                .unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Optimize end time: {}\n",
+            beta.optimize_end_time.as_deref().unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Cleanup result: {}\n",
+            beta.cleanup_result.as_deref().unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Restore Internet result: {}\n",
+            beta.restore_internet_result
+                .as_deref()
+                .unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Diagnostics result: {}\n",
+            beta.diagnostics_result.as_deref().unwrap_or("not provided")
+        ));
+        out.push_str(&format!(
+            "Service leftover status: {}\n",
+            beta.service_leftover_status
+                .as_deref()
+                .unwrap_or("not checked")
+        ));
+        out.push_str(&format!(
+            "Public IP before/after: {} / {}\n",
+            beta.public_ip_before.as_deref().unwrap_or("not checked"),
+            beta.public_ip_after.as_deref().unwrap_or("not checked")
+        ));
+        out.push_str(&format!(
+            "API reachable before/after: {} / {}\n",
+            bool_option(beta.api_reachability_before),
+            bool_option(beta.api_reachability_after)
+        ));
+        append_route_entries(
+            &mut out,
+            "Windows route entries before optimization",
+            &beta.windows_route_entries_before,
+        );
+        append_route_entries(
+            &mut out,
+            "Windows route entries after optimization",
+            &beta.windows_route_entries_after,
+        );
+        append_route_entries(
+            &mut out,
+            "Windows route entries for allowed IPs",
+            &beta.windows_route_entries_for_allowed_ips,
+        );
     }
 
     out.push_str("\n--- Normal Route ---\n");
@@ -468,7 +671,7 @@ pub fn build_report_text(report: &DiagnosticsReport) -> String {
     }
 
     if let Some(wg) = &report.wireguard {
-        out.push_str("\n--- WireGuard Status ---\n");
+        out.push_str("\n--- RouteLag Engine Status ---\n");
         out.push_str(&redact_secrets(&wg.wg_show));
         out.push('\n');
     }
@@ -493,6 +696,27 @@ fn append_snapshot(out: &mut String, snap: &RouteSnapshot) {
     }
 }
 
+fn append_route_entries(
+    out: &mut String,
+    label: &str,
+    entries: &[beta_report::AllowedIpRouteEntry],
+) {
+    out.push_str(&format!("{label}:\n"));
+    if entries.is_empty() {
+        out.push_str("  not captured\n");
+        return;
+    }
+    for entry in entries {
+        out.push_str(&format!(
+            "  {} installed={}\n",
+            entry.allowed_ip, entry.installed
+        ));
+        if !entry.output.trim().is_empty() {
+            out.push_str(&format!("    {}\n", entry.output.replace('\n', "\n    ")));
+        }
+    }
+}
+
 fn empty_as_not_provided(value: &str) -> &str {
     if value.trim().is_empty() {
         "not provided"
@@ -509,7 +733,16 @@ pub fn enrich_report(app_data_dir: &Path, mut report: DiagnosticsReport) -> Diag
         Some(profile)
     };
     report.config_identity = config::get_config_identity(app_data_dir);
+    report.beta_report = beta_report::load_snapshot(app_data_dir);
     report
+}
+
+fn bool_option(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "not checked",
+    }
 }
 
 pub fn copy_report_text(app_data_dir: &Path) -> Result<String, DiagnosticsError> {

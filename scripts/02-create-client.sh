@@ -87,6 +87,22 @@ CLIENT_PUBLIC_KEY="$(echo "${CLIENT_PRIVATE_KEY}" | wg pubkey)"
 
 SERVER_PUB="$(cat "${SERVER_PUBLIC_KEY}")"
 PUBLIC_IP="$(get_public_ip || true)"
+CLIENT_ALLOWED_IPS="${ROUTELAG_ALLOWED_IPS:-}"
+
+if [[ -z "${CLIENT_ALLOWED_IPS}" ]]; then
+    safe_echo "ERROR" "ROUTELAG_ALLOWED_IPS must be set to captured Fortnite Middle East /32 routes."
+    echo "  Example: ROUTELAG_ALLOWED_IPS='203.0.113.10/32,203.0.113.11/32' $0 ${CLIENT_NAME}"
+    exit 1
+fi
+
+IFS=',' read -ra ALLOWED_IP_ENTRIES <<< "${CLIENT_ALLOWED_IPS}"
+for allowed_ip in "${ALLOWED_IP_ENTRIES[@]}"; do
+    allowed_ip="$(echo "${allowed_ip}" | xargs)"
+    if [[ ! "${allowed_ip}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/32$ ]]; then
+        safe_echo "ERROR" "Unsafe AllowedIPs entry '${allowed_ip}'. Only IPv4 /32 routes are allowed."
+        exit 1
+    fi
+done
 
 # --- Write client config ---
 cat > "${CLIENT_CONF}" <<EOF
@@ -101,7 +117,7 @@ DNS = 1.1.1.1
 [Peer]
 PublicKey = ${SERVER_PUB}
 Endpoint = ${PUBLIC_IP}:${WG_PORT}
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = ${CLIENT_ALLOWED_IPS}
 PersistentKeepalive = 25
 EOF
 

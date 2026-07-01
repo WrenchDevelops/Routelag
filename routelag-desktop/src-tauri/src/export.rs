@@ -7,13 +7,9 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 use crate::config::redact_secrets;
-use crate::diagnostics::{
-    build_report_text, enrich_report, load_report, DiagnosticsReport, DIAGNOSTICS_FILENAME,
-    REPORT_TEXT_FILENAME,
-};
+use crate::diagnostics::{build_report_text, enrich_report, load_report, DiagnosticsReport};
 use crate::logs::LOG_FILENAME;
 use crate::network_diag::ping_results_to_csv;
-use crate::tunnel;
 
 #[derive(Debug, Error)]
 pub enum ExportError {
@@ -38,9 +34,28 @@ pub fn export_report_zip(app_data_dir: &Path, dest_zip: &Path) -> Result<PathBuf
     let text_report = build_report_text(&report);
     write_zip_string(&mut zip, "routelag-report.txt", &text_report, options)?;
 
-    let json = serde_json::to_string_pretty(&report)
-        .map_err(|e| ExportError::Failed(e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(&report).map_err(|e| ExportError::Failed(e.to_string()))?;
     write_zip_string(&mut zip, "routelag-report.json", &json, options)?;
+
+    if let Some(beta) = &report.beta_report {
+        let beta_json =
+            serde_json::to_string_pretty(beta).map_err(|e| ExportError::Failed(e.to_string()))?;
+        write_zip_string(&mut zip, "beta-report.json", &beta_json, options)?;
+
+        // Include auto-route data as a dedicated file when present
+        if let Some(auto_route) = &beta.auto_route {
+            let ar_json = serde_json::to_string_pretty(auto_route)
+                .map_err(|e| ExportError::Failed(e.to_string()))?;
+            write_zip_string(&mut zip, "auto-route-report.json", &ar_json, options)?;
+        }
+    }
+
+    if let Some(profile) = &report.tester_profile {
+        let notes_json = serde_json::to_string_pretty(profile)
+            .map_err(|e| ExportError::Failed(e.to_string()))?;
+        write_zip_string(&mut zip, "tester-notes.json", &notes_json, options)?;
+    }
 
     let mut all_pings = report.normal_route.pings.clone();
     if let Some(t) = &report.routelag_route {
@@ -57,13 +72,20 @@ pub fn export_report_zip(app_data_dir: &Path, dest_zip: &Path) -> Result<PathBuf
     let tr_tunnel = traceroute_text(&report, false);
     write_zip_string(&mut zip, "traceroute-tunnel.txt", &tr_tunnel, options)?;
 
-    let wg_status = wireguard_status_text(&report);
-    write_zip_string(&mut zip, "wireguard-status.txt", &wg_status, options)?;
+    let engine_status = engine_status_text(&report);
+    write_zip_string(
+        &mut zip,
+        "routelag-engine-status.txt",
+        &engine_status,
+        options,
+    )?;
+    write_zip_string(&mut zip, "wireguard-status.txt", &engine_status, options)?;
 
     let app_log = read_app_log(app_data_dir);
     write_zip_string(&mut zip, "app-log.txt", &app_log, options)?;
 
-    zip.finish().map_err(|e| ExportError::Failed(e.to_string()))?;
+    zip.finish()
+        .map_err(|e| ExportError::Failed(e.to_string()))?;
     Ok(dest_zip.to_path_buf())
 }
 
@@ -96,15 +118,14 @@ fn traceroute_text(report: &DiagnosticsReport, normal: bool) -> String {
     redact_secrets(&out)
 }
 
-fn wireguard_status_text(report: &DiagnosticsReport) -> String {
+fn engine_status_text(report: &DiagnosticsReport) -> String {
     if let Some(wg) = &report.wireguard {
         format!(
-            "Service status:\n{}\n\nwg show:\n{}",
+            "Service status:\n{}\n\nEngine status:\n{}",
             wg.service_status, wg.wg_show
         )
     } else {
-        let snippet = tunnel::wireguard_service_status_snippet();
-        format!("{snippet}\n\nNo tunnel phase was captured.")
+        "No tunnel phase was captured.".to_string()
     }
 }
 

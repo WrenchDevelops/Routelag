@@ -2,14 +2,21 @@ import { useState } from "react";
 
 import { GlowButton } from "../components/GlowButton";
 import { GlowLogo } from "../components/GlowLogo";
+import { SafetyErrorPanel } from "../components/SafetyErrorPanel";
 import { useToast } from "../components/Toast";
+import type { InlineError } from "../types";
 
 interface LoginPageProps {
   busy: boolean;
+  error: InlineError | null;
   onLogin: (inviteCode: string) => Promise<void>;
 }
 
-export function LoginPage({ busy, onLogin }: LoginPageProps) {
+export function LoginPage({
+  busy,
+  error,
+  onLogin,
+}: LoginPageProps) {
   const { showToast } = useToast();
   const [inviteCode, setInviteCode] = useState("");
 
@@ -24,25 +31,32 @@ export function LoginPage({ busy, onLogin }: LoginPageProps) {
 
   return (
     <form className="login-view" onSubmit={submit}>
-      <GlowLogo />
-      <div className="login-copy">
-        <h2>Welcome!</h2>
-        <p>Enter your beta invite code</p>
-        <small>RouteLag Beta</small>
+      <div className="login-hero">
+        <GlowLogo />
+        <div className="login-copy">
+          <small>RouteLag Beta</small>
+          <h1>Welcome back</h1>
+          <p>Enter your invite to start optimizing.</p>
+        </div>
       </div>
-      <label className="field-label">
-        <span>Invite code</span>
-        <input
-          value={inviteCode}
-          onChange={(event) => setInviteCode(event.target.value)}
-          type="text"
-          autoComplete="one-time-code"
-          placeholder="BETA-WRENCH-001"
-        />
-      </label>
-      <GlowButton type="submit" disabled={busy}>
-        {busy ? "Logging in..." : "Log in"}
-      </GlowButton>
+      <div className="login-form-block">
+        {error && <SafetyErrorPanel error={error} />}
+        <label className="field-label">
+          <span>Invite code</span>
+          <input
+            value={inviteCode}
+            onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+            type="text"
+            autoCapitalize="characters"
+            autoComplete="one-time-code"
+            spellCheck={false}
+            placeholder="BETA-SA-001"
+          />
+        </label>
+        <GlowButton type="submit" disabled={busy}>
+          {busy ? "Signing in..." : "Sign in"}
+        </GlowButton>
+      </div>
     </form>
   );
 }

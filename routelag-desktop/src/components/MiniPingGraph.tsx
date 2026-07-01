@@ -1,4 +1,12 @@
-export function MiniPingGraph() {
+interface MiniPingGraphProps {
+  samples: number[];
+}
+
+export function MiniPingGraph({ samples }: MiniPingGraphProps) {
+  const values = samples.filter((sample) => Number.isFinite(sample));
+  const path = values.length >= 2 ? buildPath(values) : null;
+  const latest = values[values.length - 1];
+
   return (
     <div className="mini-graph">
       <span className="graph-label top">Ping</span>
@@ -6,16 +14,34 @@ export function MiniPingGraph() {
         <path className="grid-line" d="M10 34 H270" />
         <path className="grid-line" d="M10 74 H270" />
         <path className="grid-line" d="M10 106 H270" />
-        <path
-          className="line-dim"
-          d="M10 78 C30 72 35 92 52 84 C70 74 79 91 96 82 C113 72 126 88 145 80 C166 70 178 90 198 79 C218 69 235 92 270 84"
-        />
-        <path
-          className="line-hot"
-          d="M10 48 C27 42 35 62 52 56 C70 45 82 62 98 50 C116 38 134 49 150 42 C172 31 189 26 205 45 C220 64 232 78 250 67 C260 61 265 65 270 60"
-        />
+        {path ? <path className="line-hot" d={path} /> : null}
       </svg>
+      {path ? (
+        <span className="graph-value">{Math.round(latest ?? 0)}ms</span>
+      ) : (
+        <span className="graph-empty">Run ping test</span>
+      )}
       <span className="graph-label bottom">Time</span>
     </div>
   );
+}
+
+function buildPath(samples: number[]): string {
+  const width = 260;
+  const height = 82;
+  const left = 10;
+  const top = 24;
+  const min = Math.min(...samples);
+  const max = Math.max(...samples);
+  const range = Math.max(max - min, 1);
+  const step = width / Math.max(samples.length - 1, 1);
+
+  return samples
+    .map((sample, index) => {
+      const x = left + index * step;
+      const y = top + height - ((sample - min) / range) * height;
+      const command = index === 0 ? "M" : "L";
+      return `${command}${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(" ");
 }

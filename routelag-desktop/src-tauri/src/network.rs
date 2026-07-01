@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::TUNNEL_NAME;
-use crate::tunnel::{self, TunnelStatus};
+use crate::tunnel;
 
 pub const DEFAULT_PING_HOST: &str = "1.1.1.1";
 const ROUTE_TEST_FILENAME: &str = "route-test-latest.json";
@@ -77,9 +77,7 @@ pub fn ping_host(host: &str) -> Result<PingResult, NetworkError> {
             .args(["-n", "4", "-w", "1000", host])
             .output()
     } else {
-        Command::new("ping")
-            .args(["-c", "4", host])
-            .output()
+        Command::new("ping").args(["-c", "4", host]).output()
     }
     .map_err(|e| NetworkError::PingFailed(e.to_string()))?;
 
@@ -159,11 +157,7 @@ fn compute_jitter(samples: &[f64]) -> Option<f64> {
         return None;
     }
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
-    let variance = samples
-        .iter()
-        .map(|s| (s - mean).powi(2))
-        .sum::<f64>()
-        / samples.len() as f64;
+    let variance = samples.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / samples.len() as f64;
     Some(variance.sqrt())
 }
 

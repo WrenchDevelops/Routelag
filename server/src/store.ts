@@ -4,10 +4,15 @@ import { randomUUID } from "node:crypto";
 export interface RouteSession {
   sessionId: string;
   testerId: string;
+  inviteCode: string;
   publicKey: string;
   clientIp: string;
   gameId: string;
   serverId: string;
+  serverName: string;
+  endpoint: string;
+  allowedIps: string;
+  mtu: number;
   appVersion: string;
   createdAt: string;
   endedAt: string | null;

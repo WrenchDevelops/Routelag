@@ -1,5 +1,6 @@
-use std::net::ToSocketAddrs;
-use std::process::Command;
+use std::net::{TcpStream, ToSocketAddrs};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -66,17 +67,25 @@ pub enum DiagNetworkError {
 
 pub fn run_ping_test(host: &str) -> Result<DetailedPingResult, DiagNetworkError> {
     let output = if cfg!(windows) {
-        Command::new("ping")
-            .args(["-n", "4", "-w", "1000", host])
-            .output()
+        run_command_with_timeout(
+            "ping",
+            &["-n", "2", "-w", "1000", host],
+            Duration::from_secs(5),
+        )
     } else {
-        Command::new("ping")
-            .args(["-c", "4", "-W", "1", host])
-            .output()
+        run_command_with_timeout(
+            "ping",
+            &["-c", "2", "-W", "1", host],
+            Duration::from_secs(5),
+        )
     }
     .map_err(|e| DiagNetworkError::PingFailed {
         host: host.to_string(),
         message: e.to_string(),
+    })?
+    .ok_or_else(|| DiagNetworkError::PingFailed {
+        host: host.to_string(),
+        message: "timed out".to_string(),
     })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -180,27 +189,27 @@ fn compute_jitter(samples: &[f64]) -> Option<f64> {
         return None;
     }
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
-    let variance = samples
-        .iter()
-        .map(|s| (s - mean).powi(2))
-        .sum::<f64>()
-        / samples.len() as f64;
+    let variance = samples.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / samples.len() as f64;
     Some(variance.sqrt())
 }
 
 pub fn run_traceroute(host: &str) -> Result<TracerouteResult, DiagNetworkError> {
     let output = if cfg!(windows) {
-        Command::new("tracert")
-            .args(["-d", "-h", "15", host])
-            .output()
+        run_command_with_timeout("tracert", &["-d", "-h", "8", host], Duration::from_secs(5))
     } else {
-        Command::new("traceroute")
-            .args(["-m", "15", "-n", host])
-            .output()
+        run_command_with_timeout(
+            "traceroute",
+            &["-m", "8", "-n", host],
+            Duration::from_secs(5),
+        )
     }
     .map_err(|e| DiagNetworkError::TracerouteFailed {
         host: host.to_string(),
         message: e.to_string(),
+    })?
+    .ok_or_else(|| DiagNetworkError::TracerouteFailed {
+        host: host.to_string(),
+        message: "timed out".to_string(),
     })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -268,17 +277,40 @@ fn probe_mtu(mtu: u32) -> bool {
     }
 
     let output = if cfg!(windows) {
-        Command::new("ping")
-            .args(["-n", "1", "-f", "-l", &payload.to_string(), "1.1.1.1"])
-            .output()
+        run_command_with_timeout(
+            "ping",
+            &[
+                "-n",
+                "1",
+                "-w",
+                "1000",
+                "-f",
+                "-l",
+                &payload.to_string(),
+                "1.1.1.1",
+            ],
+            Duration::from_secs(3),
+        )
     } else {
-        Command::new("ping")
-            .args(["-c", "1", "-M", "do", "-s", &payload.to_string(), "1.1.1.1"])
-            .output()
+        run_command_with_timeout(
+            "ping",
+            &[
+                "-c",
+                "1",
+                "-W",
+                "1",
+                "-M",
+                "do",
+                "-s",
+                &payload.to_string(),
+                "1.1.1.1",
+            ],
+            Duration::from_secs(3),
+        )
     };
 
     match output {
-        Ok(o) => {
+        Ok(Some(o)) => {
             let text = format!(
                 "{}{}",
                 String::from_utf8_lossy(&o.stdout),
@@ -290,7 +322,31 @@ fn probe_mtu(mtu: u32) -> bool {
                 && !text.contains("message too long")
                 && !text.contains("need to frag")
         }
-        Err(_) => false,
+        Ok(None) | Err(_) => false,
+    }
+}
+
+fn run_command_with_timeout(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> std::io::Result<Option<Output>> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let started = Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            return child.wait_with_output().map(Some);
+        }
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait_with_output();
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -302,7 +358,8 @@ pub fn redact_paths(text: &str) -> String {
 }
 
 pub fn ping_results_to_csv(pings: &[DetailedPingResult]) -> String {
-    let mut csv = String::from("host,sent,received,packet_loss_pct,min_ms,avg_ms,max_ms,jitter_ms\n");
+    let mut csv =
+        String::from("host,sent,received,packet_loss_pct,min_ms,avg_ms,max_ms,jitter_ms\n");
     for p in pings {
         csv.push_str(&format!(
             "{},{},{},{},{},{},{},{}\n",
@@ -327,4 +384,125 @@ pub fn lightweight_ping_ok() -> bool {
     run_ping_test("1.1.1.1")
         .map(|p| p.packet_loss_pct < 100.0 && p.received > 0)
         .unwrap_or(false)
+}
+
+/// Input for probing a single RouteLag node endpoint.
+/// `host` must be a RouteLag node endpoint host (e.g. "102.211.56.103").
+/// Never pass Fortnite /32 game IPs here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeProbeInput {
+    pub node_id: String,
+    /// Endpoint host only (no port). Comes from API endpointHost field.
+    pub host: String,
+    /// Optional port override. Defaults to 51820 (WireGuard).
+    pub port: Option<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeProbeResult {
+    pub node_id: String,
+    pub host: String,
+    pub latency_ms: Option<f64>,
+    pub jitter_ms: Option<f64>,
+    pub packet_loss_pct: f64,
+    /// "icmp", "tcp", or "unavailable"
+    pub method: String,
+    pub error: Option<String>,
+}
+
+const TCP_PROBE_TIMEOUT_MS: u64 = 3000;
+const TCP_PROBE_COUNT: usize = 3;
+
+fn tcp_connect_ms(host: &str, port: u16) -> Option<f64> {
+    let addr = format!("{host}:{port}");
+    let start = Instant::now();
+    match TcpStream::connect_timeout(
+        &addr.parse().ok()?,
+        Duration::from_millis(TCP_PROBE_TIMEOUT_MS),
+    ) {
+        Ok(_) => Some(start.elapsed().as_secs_f64() * 1000.0),
+        Err(_) => None,
+    }
+}
+
+fn probe_node_tcp(host: &str, port: u16) -> NodeProbeResult {
+    let mut samples: Vec<f64> = Vec::new();
+    for _ in 0..TCP_PROBE_COUNT {
+        if let Some(ms) = tcp_connect_ms(host, port) {
+            samples.push(ms);
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+
+    if samples.is_empty() {
+        return NodeProbeResult {
+            node_id: String::new(),
+            host: host.to_string(),
+            latency_ms: None,
+            jitter_ms: None,
+            packet_loss_pct: 100.0,
+            method: "unavailable".to_string(),
+            error: Some("TCP connect failed".to_string()),
+        };
+    }
+
+    let avg = samples.iter().sum::<f64>() / samples.len() as f64;
+    let jitter = compute_jitter(&samples);
+    let loss = (TCP_PROBE_COUNT - samples.len()) as f64 / TCP_PROBE_COUNT as f64 * 100.0;
+
+    NodeProbeResult {
+        node_id: String::new(),
+        host: host.to_string(),
+        latency_ms: Some(avg),
+        jitter_ms: jitter,
+        packet_loss_pct: loss,
+        method: "tcp".to_string(),
+        error: None,
+    }
+}
+
+/// Probe a list of RouteLag node endpoints using ICMP ping with TCP fallback.
+///
+/// Safety: only accepts endpoint hosts from the API (RouteLag-owned nodes).
+/// Never use this with Fortnite /32 game IPs.
+pub fn probe_route_nodes(inputs: Vec<NodeProbeInput>) -> Vec<NodeProbeResult> {
+    inputs
+        .into_iter()
+        .map(|input| {
+            let host = input.host.trim().to_string();
+            if host.is_empty() {
+                return NodeProbeResult {
+                    node_id: input.node_id,
+                    host,
+                    latency_ms: None,
+                    jitter_ms: None,
+                    packet_loss_pct: 100.0,
+                    method: "unavailable".to_string(),
+                    error: Some("Empty host".to_string()),
+                };
+            }
+
+            // Try ICMP first
+            match run_ping_test(&host) {
+                Ok(ping) if ping.received > 0 => {
+                    NodeProbeResult {
+                        node_id: input.node_id,
+                        host,
+                        latency_ms: ping.avg_ms,
+                        jitter_ms: ping.jitter_ms,
+                        packet_loss_pct: ping.packet_loss_pct,
+                        method: "icmp".to_string(),
+                        error: None,
+                    }
+                }
+                _ => {
+                    // ICMP failed or blocked — fall back to TCP connect
+                    let port = input.port.unwrap_or(51820);
+                    let mut result = probe_node_tcp(&host, port);
+                    result.node_id = input.node_id;
+                    result
+                }
+            }
+        })
+        .collect()
 }

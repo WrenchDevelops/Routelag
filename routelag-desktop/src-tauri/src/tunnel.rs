@@ -1,12 +1,12 @@
-use std::path::Path;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::config::{self, redact_secrets, TUNNEL_NAME};
+use crate::config::{self, redact_secrets};
 use crate::elevation::{self, ElevationError};
+use crate::route_lag_engine::{self, RouteLagEngine, RouteLagEngineError, ENGINE_MISSING_MESSAGE};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TunnelStatus {
@@ -54,15 +54,17 @@ impl TunnelStatus {
 
 #[derive(Debug, Error)]
 pub enum TunnelError {
-    #[error("Install WireGuard for Windows from https://www.wireguard.com/install/")]
-    WireGuardNotInstalled,
-    #[error("RouteLag needs administrator permission to control the WireGuard network tunnel.")]
+    #[error("{ENGINE_MISSING_MESSAGE}")]
+    EngineMissing,
+    #[error(
+        "RouteLag needs administrator permission to control the RouteLag Engine route session."
+    )]
     NotElevated,
-    #[error("No config imported. Import a WireGuard .conf file first.")]
+    #[error("No RouteLag route profile is ready. Start Optimization to create a route session.")]
     NoConfig,
-    #[error("Tunnel operation failed: {0}")]
+    #[error("RouteLag Engine operation failed: {0}")]
     OperationFailed(String),
-    #[error("WireGuard tunnel control is only available on Windows.")]
+    #[error("RouteLag Engine route control is only available on Windows.")]
     UnsupportedPlatform,
 }
 
@@ -75,69 +77,25 @@ impl From<ElevationError> for TunnelError {
     }
 }
 
-pub fn is_wireguard_installed() -> bool {
-    wireguard_exe().is_some()
-}
-
-pub fn wireguard_exe_path() -> Option<std::path::PathBuf> {
-    wireguard_exe()
-}
-
-fn wireguard_exe() -> Option<std::path::PathBuf> {
-    #[cfg(windows)]
-    {
-        let candidates = [
-            std::env::var("ProgramFiles")
-                .ok()
-                .map(|p| std::path::PathBuf::from(p).join("WireGuard").join("wireguard.exe")),
-            std::env::var("ProgramFiles(x86)")
-                .ok()
-                .map(|p| std::path::PathBuf::from(p).join("WireGuard").join("wireguard.exe")),
-        ];
-        for candidate in candidates.into_iter().flatten() {
-            if candidate.is_file() {
-                return Some(candidate);
-            }
+impl From<RouteLagEngineError> for TunnelError {
+    fn from(value: RouteLagEngineError) -> Self {
+        match value {
+            RouteLagEngineError::Missing => TunnelError::EngineMissing,
+            RouteLagEngineError::OperationFailed(message) => TunnelError::OperationFailed(message),
         }
     }
-    #[cfg(not(windows))]
-    let _ = ();
-    None
 }
 
-fn service_name() -> String {
-    format!("WireGuardTunnel${TUNNEL_NAME}")
+pub fn is_route_lag_engine_available(engine: &RouteLagEngine) -> bool {
+    engine.is_available()
 }
 
-#[cfg(windows)]
-fn query_service_state() -> Option<String> {
-    let output = Command::new("sc")
-        .args(["query", &service_name()])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    if stdout.contains("does not exist") || stdout.contains("1060") {
-        return None;
-    }
-    Some(stdout)
+pub fn route_lag_engine_path(engine: &RouteLagEngine) -> Option<PathBuf> {
+    engine.service_binary()
 }
 
-#[cfg(not(windows))]
-fn query_service_state() -> Option<String> {
-    None
-}
-
-pub fn wireguard_service_status_snippet() -> String {
-    match query_service_state() {
-        Some(s) => s,
-        None => {
-            if is_wireguard_installed() {
-                format!("Service {} is not installed.", service_name())
-            } else {
-                "WireGuard for Windows is not installed.".to_string()
-            }
-        }
-    }
+pub fn route_lag_service_status_snippet(engine: &RouteLagEngine) -> String {
+    engine.service_status_snippet()
 }
 
 pub fn tunnel_status() -> TunnelStatus {
@@ -148,7 +106,7 @@ pub fn tunnel_status() -> TunnelStatus {
 
     #[cfg(windows)]
     {
-        let Some(state_output) = query_service_state() else {
+        let Some(state_output) = route_lag_engine::query_service_state() else {
             return TunnelStatus::disconnected();
         };
 
@@ -167,23 +125,6 @@ pub fn tunnel_status() -> TunnelStatus {
         }
 
         if state_line.contains("RUNNING") {
-            if let Some(wg) = std::env::var("ProgramFiles")
-                .ok()
-                .map(|p| std::path::PathBuf::from(p).join("WireGuard").join("wg.exe"))
-                .filter(|p| p.is_file())
-            {
-                let show = Command::new(wg)
-                    .args(["show", TUNNEL_NAME])
-                    .output()
-                    .ok()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
-
-                if let Some(text) = show {
-                    if text.contains("latest handshake") {
-                        return TunnelStatus::connected();
-                    }
-                }
-            }
             return TunnelStatus::connected();
         }
 
@@ -191,7 +132,7 @@ pub fn tunnel_status() -> TunnelStatus {
     }
 }
 
-pub fn connect_tunnel(app_data_dir: &Path) -> Result<(), TunnelError> {
+pub fn connect_tunnel(app_data_dir: &Path, engine: &RouteLagEngine) -> Result<(), TunnelError> {
     #[cfg(not(windows))]
     {
         let _ = app_data_dir;
@@ -203,8 +144,8 @@ pub fn connect_tunnel(app_data_dir: &Path) -> Result<(), TunnelError> {
         if !elevation::is_elevated() {
             return Err(TunnelError::NotElevated);
         }
-        if !is_wireguard_installed() {
-            return Err(TunnelError::WireGuardNotInstalled);
+        if !engine.is_available() {
+            return Err(TunnelError::EngineMissing);
         }
         if !config::has_config(app_data_dir) {
             return Err(TunnelError::NoConfig);
@@ -218,31 +159,14 @@ pub fn connect_tunnel(app_data_dir: &Path) -> Result<(), TunnelError> {
             return Ok(());
         }
 
-        let wg = wireguard_exe().ok_or(TunnelError::WireGuardNotInstalled)?;
-        let output = Command::new(&wg)
-            .args(["/installtunnelservice", &config_str])
-            .output()
-            .map_err(|e| TunnelError::OperationFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let msg = if !stderr.trim().is_empty() {
-                stderr.to_string()
-            } else {
-                stdout.to_string()
-            };
-            if msg.to_lowercase().contains("already installed") {
-                return Ok(());
-            }
-            return Err(TunnelError::OperationFailed(msg.trim().to_string()));
-        }
+        let _ = config_str;
+        engine.install_route_profile(&config_path)?;
 
         Ok(())
     }
 }
 
-pub fn disconnect_tunnel() -> Result<(), TunnelError> {
+pub fn disconnect_tunnel(engine: &RouteLagEngine) -> Result<(), TunnelError> {
     #[cfg(not(windows))]
     {
         return Err(TunnelError::UnsupportedPlatform);
@@ -253,8 +177,8 @@ pub fn disconnect_tunnel() -> Result<(), TunnelError> {
         if !elevation::is_elevated() {
             return Err(TunnelError::NotElevated);
         }
-        if !is_wireguard_installed() {
-            return Err(TunnelError::WireGuardNotInstalled);
+        if !engine.is_available() {
+            return Err(TunnelError::EngineMissing);
         }
 
         let status = tunnel_status();
@@ -262,32 +186,14 @@ pub fn disconnect_tunnel() -> Result<(), TunnelError> {
             return Ok(());
         }
 
-        let wg = wireguard_exe().ok_or(TunnelError::WireGuardNotInstalled)?;
-        let output = Command::new(&wg)
-            .args(["/uninstalltunnelservice", TUNNEL_NAME])
-            .output()
-            .map_err(|e| TunnelError::OperationFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let msg = if !stderr.trim().is_empty() {
-                stderr.to_string()
-            } else {
-                stdout.to_string()
-            };
-            if msg.contains("does not exist") || msg.contains("1060") {
-                return Ok(());
-            }
-            return Err(TunnelError::OperationFailed(msg.trim().to_string()));
-        }
+        engine.uninstall_route_profile(&config::TUNNEL_NAME)?;
 
         Ok(())
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WireGuardStatus {
+pub struct RouteLagEngineRuntimeStatus {
     pub service_status: String,
     pub wg_show: String,
     pub latest_handshake_secs_ago: Option<u64>,
@@ -298,16 +204,19 @@ pub struct WireGuardStatus {
     pub mtu: Option<u32>,
 }
 
-pub fn get_wireguard_status() -> WireGuardStatus {
-    let service_status = wireguard_service_status_snippet();
-    let wg_show_raw = wg_show_output().unwrap_or_else(|| "wg show unavailable".to_string());
+pub fn get_route_lag_engine_runtime_status(engine: &RouteLagEngine) -> RouteLagEngineRuntimeStatus {
+    let service_status = route_lag_service_status_snippet(engine);
+    let wg_show_raw =
+        wg_show_output(engine).unwrap_or_else(|| "engine status unavailable".to_string());
     let wg_show = redact_secrets(&wg_show_raw);
 
-    WireGuardStatus {
+    RouteLagEngineRuntimeStatus {
         service_status: redact_secrets(&service_status),
         latest_handshake_secs_ago: parse_handshake_secs_ago(&wg_show_raw),
-        transfer_rx: parse_field(&wg_show_raw, "transfer:").map(|s| s.split_whitespace().next().unwrap_or("").to_string()),
-        transfer_tx: parse_field(&wg_show_raw, "transfer:").and_then(|s| s.split_whitespace().nth(1).map(|v| v.to_string())),
+        transfer_rx: parse_field(&wg_show_raw, "transfer:")
+            .map(|s| s.split_whitespace().next().unwrap_or("").to_string()),
+        transfer_tx: parse_field(&wg_show_raw, "transfer:")
+            .and_then(|s| s.split_whitespace().nth(1).map(|v| v.to_string())),
         endpoint: parse_field(&wg_show_raw, "endpoint:"),
         allowed_ips: parse_allowed_ips(&wg_show_raw),
         mtu: parse_mtu_from_config_or_show(&wg_show_raw),
@@ -315,18 +224,10 @@ pub fn get_wireguard_status() -> WireGuardStatus {
     }
 }
 
-fn wg_show_output() -> Option<String> {
+fn wg_show_output(engine: &RouteLagEngine) -> Option<String> {
     #[cfg(windows)]
     {
-        let wg = std::env::var("ProgramFiles")
-            .ok()
-            .map(|p| std::path::PathBuf::from(p).join("WireGuard").join("wg.exe"))
-            .filter(|p| p.is_file())?;
-        let output = Command::new(wg)
-            .args(["show", TUNNEL_NAME])
-            .output()
-            .ok()?;
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
+        engine.show_tunnel()
     }
     #[cfg(not(windows))]
     {
@@ -396,10 +297,10 @@ pub fn parse_handshake_secs_ago(wg_show: &str) -> Option<u64> {
     None
 }
 
-pub fn wait_for_handshake(timeout: Duration) -> bool {
+pub fn wait_for_handshake(engine: &RouteLagEngine, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if let Some(show) = wg_show_output() {
+        if let Some(show) = wg_show_output(engine) {
             if show.contains("latest handshake") {
                 if let Some(secs) = parse_handshake_secs_ago(&show) {
                     if secs < 180 {
@@ -419,14 +320,14 @@ pub fn wait_for_handshake(timeout: Duration) -> bool {
     tunnel_status().is_connected()
 }
 
-pub fn reconnect_tunnel(app_data_dir: &Path) -> Result<(), TunnelError> {
-    disconnect_tunnel()?;
+pub fn reconnect_tunnel(app_data_dir: &Path, engine: &RouteLagEngine) -> Result<(), TunnelError> {
+    disconnect_tunnel(engine)?;
     std::thread::sleep(Duration::from_secs(2));
-    connect_tunnel(app_data_dir)?;
-    wait_for_handshake(Duration::from_secs(30));
+    connect_tunnel(app_data_dir, engine)?;
+    wait_for_handshake(engine, Duration::from_secs(30));
     Ok(())
 }
 
 // TODO(paid-tier): Replace per-connect elevation with a one-time installed
-// RouteLagTunnelService that manages WireGuard tunnel lifecycle via IPC,
-// allowing the main UI to stay in normal (non-admin) mode after initial setup.
+// RouteLag service that manages tunnel lifecycle via IPC, allowing the main UI
+// to stay in normal (non-admin) mode after initial setup.

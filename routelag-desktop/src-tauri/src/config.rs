@@ -5,9 +5,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const CONFIG_FILENAME: &str = "routelag-beta.conf";
+pub const CONFIG_FILENAME: &str = "routelag-engine.conf";
 pub const CONFIG_META_FILENAME: &str = "config-meta.json";
-pub const TUNNEL_NAME: &str = "routelag-beta";
+pub const TUNNEL_NAME: &str = "routelag-engine";
+const LEGACY_CONFIG_FILENAMES: &[&str] = &["routelag-beta.conf"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ConfigIdentity {
@@ -20,11 +21,11 @@ pub struct ConfigIdentity {
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("Config file not found. Import a WireGuard .conf file first.")]
+    #[error("RouteLag route profile not found. Start Optimization to create one.")]
     NotFound,
-    #[error("Invalid WireGuard config: missing [Interface] section")]
+    #[error("Invalid RouteLag route profile: missing [Interface] section")]
     MissingInterface,
-    #[error("Invalid WireGuard config: missing PrivateKey")]
+    #[error("Invalid RouteLag route profile: missing PrivateKey")]
     MissingPrivateKey,
     #[error("Failed to read config: {0}")]
     ReadFailed(String),
@@ -140,8 +141,7 @@ pub fn write_generated_config(
     content: &str,
     identity: &ConfigIdentity,
 ) -> Result<(), ConfigError> {
-    fs::create_dir_all(app_data_dir)
-        .map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
+    fs::create_dir_all(app_data_dir).map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
     validate_config_content(content)?;
     let dest = config_path(app_data_dir);
     fs::write(&dest, content).map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
@@ -180,8 +180,7 @@ pub fn get_config_identity(app_data_dir: &Path) -> Option<ConfigIdentity> {
 }
 
 pub fn import_config(app_data_dir: &Path, source_path: &Path) -> Result<(), ConfigError> {
-    fs::create_dir_all(app_data_dir)
-        .map_err(|e| ConfigError::ImportFailed(e.to_string()))?;
+    fs::create_dir_all(app_data_dir).map_err(|e| ConfigError::ImportFailed(e.to_string()))?;
 
     let content = fs::read_to_string(source_path)
         .map_err(|e| ConfigError::ImportFailed(format!("Cannot read source file: {e}")))?;
@@ -215,6 +214,12 @@ pub fn remove_config(app_data_dir: &Path) -> Result<(), ConfigError> {
     let path = config_path(app_data_dir);
     if path.is_file() {
         fs::remove_file(&path).map_err(|e| ConfigError::WriteFailed(e.to_string()))?;
+    }
+    for filename in LEGACY_CONFIG_FILENAMES {
+        let legacy_path = app_data_dir.join(filename);
+        if legacy_path.is_file() {
+            let _ = fs::remove_file(legacy_path);
+        }
     }
     let meta = meta_path(app_data_dir);
     if meta.is_file() {

@@ -1,3 +1,4 @@
+mod beta_report;
 mod cleanup;
 mod config;
 mod diagnostics;
@@ -7,6 +8,7 @@ mod health;
 mod logs;
 mod network;
 mod network_diag;
+mod route_lag_engine;
 mod route_session;
 mod sysinfo;
 mod tester_profile;
@@ -19,7 +21,8 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::cleanup::CleanupError;
+use crate::beta_report::{AllowedIpRouteEntry, BetaReportError, BetaReportSnapshot};
+use crate::cleanup::{RecoveryStatus, RestoreInternetResult};
 use crate::config::{ConfigError, ConfigIdentity};
 use crate::diagnostics::{
     copy_report_text, load_report, run_full_diagnostics, DiagnosticsError, DiagnosticsReport,
@@ -31,18 +34,23 @@ use crate::health::{get_tunnel_health, reset_stability, StabilityTracker, Tunnel
 use crate::logs::{LogError, LogManager};
 use crate::network::{NetworkError, PingResult, RouteTestResult};
 use crate::network_diag::{
-    get_dns_status, run_mtu_test, run_ping_test, run_traceroute, DetailedPingResult, DnsStatus,
-    MtuTestResult, TracerouteResult,
+    get_dns_status, probe_route_nodes, run_mtu_test, run_ping_test, run_traceroute,
+    DetailedPingResult, DnsStatus, MtuTestResult, NodeProbeInput, NodeProbeResult, TracerouteResult,
 };
+use crate::route_lag_engine::{RouteLagEngine, RouteLagEngineStatus};
 use crate::route_session::{
     ActiveRouteSession, GeneratedRouteProfile, RouteKeys, RouteSessionError,
 };
 use crate::sysinfo::{get_network_adapter_info, get_os_info, NetworkAdapterInfo, OsInfo};
 use crate::tester_profile::{ProfileError, TesterProfile};
-use crate::tunnel::{get_wireguard_status, reconnect_tunnel, TunnelError, TunnelStatus, WireGuardStatus};
+use crate::tunnel::{
+    get_route_lag_engine_runtime_status, reconnect_tunnel, RouteLagEngineRuntimeStatus,
+    TunnelError, TunnelStatus,
+};
 
 pub struct AppState {
     pub app_data_dir: PathBuf,
+    pub engine: RouteLagEngine,
     pub logs: LogManager,
     pub connect_lock: Mutex<()>,
     pub stability: Mutex<StabilityTracker>,
@@ -83,7 +91,7 @@ fn import_config(
         let picked = app
             .dialog()
             .file()
-            .add_filter("WireGuard Config", &["conf"])
+            .add_filter("RouteLag Profile", &["conf"])
             .blocking_pick_file();
         match picked {
             Some(file) => file.into_path().map_err(|e| e.to_string())?,
@@ -92,7 +100,9 @@ fn import_config(
     };
 
     config::import_config(&state.app_data_dir, &source).map_err(|e: ConfigError| e.to_string())?;
-    state.logs.info(&format!("Imported config from {}", source.display()));
+    state
+        .logs
+        .info(&format!("Imported config from {}", source.display()));
     Ok(())
 }
 
@@ -101,8 +111,10 @@ fn remove_config(state: tauri::State<'_, AppState>) -> Result<(), String> {
     app_state(state.clone())?;
     let status = tunnel::tunnel_status();
     if status.is_connected() || status.is_connecting() {
-        tunnel::disconnect_tunnel().map_err(|e: TunnelError| e.to_string())?;
-        state.logs.info("Tunnel disconnected before config removal.");
+        tunnel::disconnect_tunnel(&state.engine).map_err(|e: TunnelError| e.to_string())?;
+        state
+            .logs
+            .info("Tunnel disconnected before config removal.");
     }
     config::remove_config(&state.app_data_dir).map_err(|e: ConfigError| e.to_string())?;
     route_session::clear_active_route_session(&state.app_data_dir).ok();
@@ -138,13 +150,23 @@ fn restart_as_admin(state: tauri::State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn is_wireguard_installed() -> bool {
-    tunnel::is_wireguard_installed()
+fn is_wireguard_installed(state: tauri::State<'_, AppState>) -> bool {
+    tunnel::is_route_lag_engine_available(&state.engine)
 }
 
 #[tauri::command]
-fn generate_route_keys_cmd() -> Result<RouteKeys, String> {
-    route_session::generate_route_keys().map_err(|e: RouteSessionError| e.to_string())
+fn is_route_lag_engine_available(state: tauri::State<'_, AppState>) -> bool {
+    tunnel::is_route_lag_engine_available(&state.engine)
+}
+
+#[tauri::command]
+fn route_lag_engine_status_cmd(state: tauri::State<'_, AppState>) -> RouteLagEngineStatus {
+    state.engine.status()
+}
+
+#[tauri::command]
+fn generate_route_keys_cmd(state: tauri::State<'_, AppState>) -> Result<RouteKeys, String> {
+    route_session::generate_route_keys(&state.engine).map_err(|e: RouteSessionError| e.to_string())
 }
 
 #[tauri::command]
@@ -163,9 +185,7 @@ fn save_route_session_profile_cmd(
 }
 
 #[tauri::command]
-fn load_active_route_session_cmd(
-    state: tauri::State<'_, AppState>,
-) -> Option<ActiveRouteSession> {
+fn load_active_route_session_cmd(state: tauri::State<'_, AppState>) -> Option<ActiveRouteSession> {
     route_session::load_active_route_session(&state.app_data_dir)
 }
 
@@ -182,7 +202,7 @@ fn connect_tunnel(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
 
     state.logs.info("Connecting tunnel...");
-    match tunnel::connect_tunnel(&state.app_data_dir) {
+    match tunnel::connect_tunnel(&state.app_data_dir, &state.engine) {
         Ok(()) => {
             reset_stability(&state.stability);
             state.logs.info("Tunnel connect command completed.");
@@ -201,7 +221,7 @@ fn disconnect_tunnel(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
 
     state.logs.info("Disconnecting tunnel...");
-    match tunnel::disconnect_tunnel() {
+    match tunnel::disconnect_tunnel(&state.engine) {
         Ok(()) => {
             reset_stability(&state.stability);
             state.logs.info("Tunnel disconnected.");
@@ -219,7 +239,7 @@ fn reconnect_tunnel_cmd(state: tauri::State<'_, AppState>) -> Result<(), String>
     app_state(state.clone())?;
     let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
     state.logs.info("Reconnecting tunnel...");
-    match reconnect_tunnel(&state.app_data_dir) {
+    match reconnect_tunnel(&state.app_data_dir, &state.engine) {
         Ok(()) => {
             reset_stability(&state.stability);
             state.logs.info("Tunnel reconnected.");
@@ -274,9 +294,23 @@ fn get_dns_status_cmd() -> DnsStatus {
     get_dns_status()
 }
 
+/// Probe a list of RouteLag node endpoints (ICMP with TCP fallback).
+/// Only accepts RouteLag-owned node hosts from the API — never game IPs.
 #[tauri::command]
-fn get_wireguard_status_cmd() -> WireGuardStatus {
-    get_wireguard_status()
+fn probe_route_nodes_cmd(nodes: Vec<NodeProbeInput>) -> Vec<NodeProbeResult> {
+    probe_route_nodes(nodes)
+}
+
+#[tauri::command]
+fn get_wireguard_status_cmd(state: tauri::State<'_, AppState>) -> RouteLagEngineRuntimeStatus {
+    get_route_lag_engine_runtime_status(&state.engine)
+}
+
+#[tauri::command]
+fn get_route_lag_engine_runtime_status_cmd(
+    state: tauri::State<'_, AppState>,
+) -> RouteLagEngineRuntimeStatus {
+    get_route_lag_engine_runtime_status(&state.engine)
 }
 
 #[tauri::command]
@@ -285,8 +319,8 @@ fn get_network_adapter_info_cmd() -> NetworkAdapterInfo {
 }
 
 #[tauri::command]
-fn get_os_info_cmd() -> OsInfo {
-    get_os_info(&app_version())
+fn get_os_info_cmd(state: tauri::State<'_, AppState>) -> OsInfo {
+    get_os_info(&app_version(), &state.engine)
 }
 
 #[tauri::command]
@@ -301,6 +335,7 @@ fn get_tunnel_health_cmd(
 ) -> TunnelHealth {
     get_tunnel_health(
         &state.stability,
+        &state.engine,
         baseline_public_ip.as_deref(),
     )
 }
@@ -321,10 +356,30 @@ fn save_tester_profile(
 }
 
 #[tauri::command]
+fn save_beta_report_snapshot_cmd(
+    state: tauri::State<'_, AppState>,
+    report: BetaReportSnapshot,
+) -> Result<(), String> {
+    app_state(state.clone())?;
+    beta_report::save_snapshot(&state.app_data_dir, &report)
+        .map_err(|e: BetaReportError| e.to_string())
+}
+
+#[tauri::command]
+fn load_beta_report_snapshot_cmd(state: tauri::State<'_, AppState>) -> Option<BetaReportSnapshot> {
+    beta_report::load_snapshot(&state.app_data_dir)
+}
+
+#[tauri::command]
+fn get_allowed_ip_route_entries_cmd(allowed_ips: Vec<String>) -> Vec<AllowedIpRouteEntry> {
+    beta_report::get_allowed_ip_route_entries(&allowed_ips)
+}
+
+#[tauri::command]
 fn emergency_cleanup_cmd(state: tauri::State<'_, AppState>) -> Result<(), String> {
     app_state(state.clone())?;
     let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
-    match cleanup::emergency_cleanup(&state.logs) {
+    match cleanup::emergency_cleanup(&state.engine, &state.logs) {
         Ok(()) => {
             reset_stability(&state.stability);
             Ok(())
@@ -334,6 +389,57 @@ fn emergency_cleanup_cmd(state: tauri::State<'_, AppState>) -> Result<(), String
             Err(e.to_string())
         }
     }
+}
+
+#[tauri::command]
+fn restore_internet_cmd(
+    state: tauri::State<'_, AppState>,
+) -> Result<RestoreInternetResult, String> {
+    app_state(state.clone())?;
+    let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
+    let result = cleanup::restore_internet(&state.app_data_dir, &state.engine, &state.logs);
+    reset_stability(&state.stability);
+    Ok(result)
+}
+
+#[tauri::command]
+fn force_clear_local_route_state_cmd(
+    state: tauri::State<'_, AppState>,
+) -> Result<RecoveryStatus, String> {
+    app_state(state.clone())?;
+    let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
+    let status = cleanup::force_clear_local_route_state(&state.app_data_dir, &state.logs);
+    reset_stability(&state.stability);
+    Ok(status)
+}
+
+#[tauri::command]
+fn repair_windows_network_cmd(
+    state: tauri::State<'_, AppState>,
+) -> Result<RestoreInternetResult, String> {
+    app_state(state.clone())?;
+    let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
+    Ok(cleanup::repair_windows_network(&state.logs))
+}
+
+#[tauri::command]
+fn get_recovery_status_cmd(state: tauri::State<'_, AppState>) -> RecoveryStatus {
+    cleanup::get_recovery_status(&state.app_data_dir)
+}
+
+#[tauri::command]
+fn log_client_event_cmd(state: tauri::State<'_, AppState>, event: String) -> Result<(), String> {
+    app_state(state.clone())?;
+    let sanitized = sanitize_client_event(&event);
+    state.logs.info(&format!("Client event: {sanitized}"));
+    Ok(())
+}
+
+fn sanitize_client_event(event: &str) -> String {
+    let private_key_re = regex::Regex::new(r"(?i)(private[_ -]?key[=:]\s*)\S+").unwrap();
+    let token_re = regex::Regex::new(r"(?i)(token[=:]\s*)\S+").unwrap();
+    let text = private_key_re.replace_all(event, "${1}[REDACTED]");
+    token_re.replace_all(&text, "${1}[REDACTED]").to_string()
 }
 
 #[tauri::command]
@@ -347,6 +453,7 @@ fn run_full_diagnostics_cmd(
     disconnect_for_normal: bool,
     include_public_ip: bool,
     skip_tunnel_phase: bool,
+    include_traceroute: bool,
 ) -> Result<DiagnosticsReport, String> {
     app_state(state.clone())?;
     state.logs.info("Starting full diagnostics...");
@@ -354,8 +461,9 @@ fn run_full_diagnostics_cmd(
         disconnect_for_normal,
         include_public_ip,
         skip_tunnel_phase,
+        include_traceroute,
     };
-    match run_full_diagnostics(&state.app_data_dir, &app_version(), options) {
+    match run_full_diagnostics(&state.app_data_dir, &state.engine, &app_version(), options) {
         Ok(report) => {
             state.logs.info(&format!(
                 "Diagnostics complete. Score: {}",
@@ -396,12 +504,17 @@ fn export_report_zip_cmd(
 
     let path = crate::export::export_report_zip(&state.app_data_dir, &dest)
         .map_err(|e: ExportError| e.to_string())?;
-    state.logs.info(&format!("Exported report ZIP to {}", path.display()));
+    state
+        .logs
+        .info(&format!("Exported report ZIP to {}", path.display()));
     Ok(path.display().to_string())
 }
 
 #[tauri::command]
-fn run_route_test(state: tauri::State<'_, AppState>, mode: String) -> Result<RouteTestResult, String> {
+fn run_route_test(
+    state: tauri::State<'_, AppState>,
+    mode: String,
+) -> Result<RouteTestResult, String> {
     app_state(state.clone())?;
     let result = network::run_route_test(&state.app_data_dir, &mode)
         .map_err(|e: NetworkError| e.to_string())?;
@@ -420,7 +533,7 @@ fn load_route_test(state: tauri::State<'_, AppState>) -> Option<RouteTestResult>
 #[tauri::command]
 fn read_logs(state: tauri::State<'_, AppState>) -> Result<String, String> {
     app_state(state.clone())?;
-    let status = tunnel::wireguard_service_status_snippet();
+    let status = tunnel::route_lag_service_status_snippet(&state.engine);
     let header = format!("RouteLag Beta v{}\n", app_version());
     state
         .logs
@@ -440,7 +553,7 @@ fn reset_app(state: tauri::State<'_, AppState>) -> Result<(), String> {
 
     let status = tunnel::tunnel_status();
     if (status.is_connected() || status.is_connecting()) && elevation::is_elevated() {
-        let _ = tunnel::disconnect_tunnel();
+        let _ = tunnel::disconnect_tunnel(&state.engine);
     }
 
     config::remove_config(&state.app_data_dir).ok();
@@ -453,10 +566,16 @@ fn reset_app(state: tauri::State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn open_logs_folder(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn open_logs_folder(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
     app_state(state.clone())?;
     app.opener()
-        .open_path(state.app_data_dir.to_string_lossy().to_string(), None::<&str>)
+        .open_path(
+            state.app_data_dir.to_string_lossy().to_string(),
+            None::<&str>,
+        )
         .map_err(|e| e.to_string())
 }
 
@@ -475,11 +594,24 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir)?;
 
             let logs = LogManager::new(&app_data_dir);
+            let engine = RouteLagEngine::new(app.path().resource_dir().ok());
             let version = app_version();
             logs.info(&format!("RouteLag Beta v{version} started."));
+            if !engine.is_available() {
+                let search_roots = engine
+                    .search_roots()
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                logs.warn(crate::route_lag_engine::BUNDLED_ENGINE_MISSING_WARNING);
+                logs.warn(&format!("RouteLag Engine search paths: {search_roots}"));
+                logs.warn(crate::route_lag_engine::ENGINE_MISSING_MESSAGE);
+            }
 
             app.manage(AppState {
                 app_data_dir,
+                engine,
                 logs,
                 connect_lock: Mutex::new(()),
                 stability: Mutex::new(StabilityTracker::default()),
@@ -497,6 +629,8 @@ pub fn run() {
             is_elevated,
             restart_as_admin,
             is_wireguard_installed,
+            is_route_lag_engine_available,
+            route_lag_engine_status_cmd,
             generate_route_keys_cmd,
             save_route_session_profile_cmd,
             load_active_route_session_cmd,
@@ -510,14 +644,24 @@ pub fn run() {
             run_ping_test_cmd,
             run_traceroute_cmd,
             get_dns_status_cmd,
+            probe_route_nodes_cmd,
             get_wireguard_status_cmd,
+            get_route_lag_engine_runtime_status_cmd,
             get_network_adapter_info_cmd,
             get_os_info_cmd,
             run_mtu_test_cmd,
             get_tunnel_health_cmd,
             get_tester_profile,
             save_tester_profile,
+            save_beta_report_snapshot_cmd,
+            load_beta_report_snapshot_cmd,
+            get_allowed_ip_route_entries_cmd,
             emergency_cleanup_cmd,
+            restore_internet_cmd,
+            force_clear_local_route_state_cmd,
+            repair_windows_network_cmd,
+            get_recovery_status_cmd,
+            log_client_event_cmd,
             load_diagnostics,
             run_full_diagnostics_cmd,
             copy_report_text_cmd,

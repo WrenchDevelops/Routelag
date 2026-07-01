@@ -2,19 +2,26 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   ConfigIdentity,
+  AllowedIpRouteEntry,
+  BetaReportSnapshot,
   DetailedPingResult,
   DiagnosticsReport,
   DnsStatus,
   MtuTestResult,
   NetworkAdapterInfo,
+  NodeProbeInput,
+  NodeProbeResult,
   OsInfo,
   PingResult,
+  RecoveryStatus,
+  RestoreInternetResult,
   RouteTestResult,
+  RouteLagEngineStatus,
+  RouteLagEngineRuntimeStatus,
   TesterProfile,
   TracerouteResult,
   TunnelHealth,
   TunnelStatus,
-  WireGuardStatus,
 } from "./types";
 import type {
   ActiveRouteSession,
@@ -32,7 +39,9 @@ export const api = {
   getConfigIdentity: () => invoke<ConfigIdentity | null>("get_config_identity"),
   isElevated: () => invoke<boolean>("is_elevated"),
   restartAsAdmin: () => invoke<void>("restart_as_admin"),
-  isWireguardInstalled: () => invoke<boolean>("is_wireguard_installed"),
+  isRouteLagEngineAvailable: () => invoke<boolean>("is_route_lag_engine_available"),
+  getRouteLagEngineStatus: () =>
+    invoke<RouteLagEngineStatus>("route_lag_engine_status_cmd"),
   generateRouteKeys: () => invoke<RouteKeys>("generate_route_keys_cmd"),
   saveRouteSessionProfile: (profile: GeneratedRouteProfile) =>
     invoke<void>("save_route_session_profile_cmd", { profile }),
@@ -42,7 +51,13 @@ export const api = {
   connectTunnel: () => invoke<void>("connect_tunnel"),
   disconnectTunnel: () => invoke<void>("disconnect_tunnel"),
   reconnectTunnel: () => invoke<void>("reconnect_tunnel_cmd"),
-  emergencyCleanup: () => invoke<void>("emergency_cleanup_cmd"),
+  restoreInternet: () => invoke<RestoreInternetResult>("restore_internet_cmd"),
+  forceClearLocalRouteState: () =>
+    invoke<RecoveryStatus>("force_clear_local_route_state_cmd"),
+  repairWindowsNetwork: () =>
+    invoke<RestoreInternetResult>("repair_windows_network_cmd"),
+  getRecoveryStatus: () => invoke<RecoveryStatus>("get_recovery_status_cmd"),
+  logClientEvent: (event: string) => invoke<void>("log_client_event_cmd", { event }),
   tunnelStatus: () => invoke<TunnelStatus>("tunnel_status"),
   getPublicIp: () => invoke<string>("get_public_ip"),
   pingHost: (host?: string) => invoke<PingResult>("ping_host", { host }),
@@ -56,13 +71,22 @@ export const api = {
   getTesterProfile: () => invoke<TesterProfile>("get_tester_profile"),
   saveTesterProfile: (profile: TesterProfile) =>
     invoke<void>("save_tester_profile", { profile }),
+  saveBetaReportSnapshot: (report: BetaReportSnapshot) =>
+    invoke<void>("save_beta_report_snapshot_cmd", { report }),
+  loadBetaReportSnapshot: () =>
+    invoke<BetaReportSnapshot | null>("load_beta_report_snapshot_cmd"),
+  getAllowedIpRouteEntries: (allowedIps: string[]) =>
+    invoke<AllowedIpRouteEntry[]>("get_allowed_ip_route_entries_cmd", {
+      allowedIps,
+    }),
 
   runPingTest: (host: string) =>
     invoke<DetailedPingResult>("run_ping_test_cmd", { host }),
   runTraceroute: (host: string) =>
     invoke<TracerouteResult>("run_traceroute_cmd", { host }),
   getDnsStatus: () => invoke<DnsStatus>("get_dns_status_cmd"),
-  getWireguardStatus: () => invoke<WireGuardStatus>("get_wireguard_status_cmd"),
+  getRouteLagEngineRuntimeStatus: () =>
+    invoke<RouteLagEngineRuntimeStatus>("get_route_lag_engine_runtime_status_cmd"),
   getNetworkAdapterInfo: () =>
     invoke<NetworkAdapterInfo>("get_network_adapter_info_cmd"),
   getOsInfo: () => invoke<OsInfo>("get_os_info_cmd"),
@@ -76,12 +100,16 @@ export const api = {
     disconnectForNormal: boolean;
     includePublicIp: boolean;
     skipTunnelPhase: boolean;
+    includeTraceroute?: boolean;
   }) =>
     invoke<DiagnosticsReport>("run_full_diagnostics_cmd", {
       disconnectForNormal: options.disconnectForNormal,
       includePublicIp: options.includePublicIp,
       skipTunnelPhase: options.skipTunnelPhase,
+      includeTraceroute: Boolean(options.includeTraceroute),
     }),
   copyReportText: () => invoke<string>("copy_report_text_cmd"),
   exportReportZip: () => invoke<string>("export_report_zip_cmd"),
+  probeRouteNodes: (nodes: NodeProbeInput[]) =>
+    invoke<NodeProbeResult[]>("probe_route_nodes_cmd", { nodes }),
 };

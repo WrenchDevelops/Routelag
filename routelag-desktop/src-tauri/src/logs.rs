@@ -92,8 +92,8 @@ impl LogManager {
             output.push('\n');
         }
         if self.path.is_file() {
-            let content = fs::read_to_string(&self.path)
-                .map_err(|e| LogError::ReadFailed(e.to_string()))?;
+            let content =
+                fs::read_to_string(&self.path).map_err(|e| LogError::ReadFailed(e.to_string()))?;
             let lines: Vec<&str> = content.lines().collect();
             let tail = if lines.len() > 300 {
                 &lines[lines.len() - 300..]
@@ -106,7 +106,7 @@ impl LogManager {
         }
 
         if let Some(status) = extra_status {
-            output.push_str("\n\n--- WireGuard Service Status ---\n");
+            output.push_str("\n\n--- RouteLag Service Status ---\n");
             output.push_str(status);
         }
 
