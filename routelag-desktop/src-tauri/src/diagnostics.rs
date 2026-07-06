@@ -63,18 +63,8 @@ pub struct DiagnosticsReport {
     pub beta_report: Option<BetaReportSnapshot>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiagnosticsProgress {
-    pub step: String,
-    pub message: String,
-}
-
 #[derive(Debug, Error)]
 pub enum DiagnosticsError {
-    #[error("Tunnel is connected. Disconnect temporarily to test the normal route, or set disconnect_for_normal=true.")]
-    NeedsDisconnect,
-    #[error("Tunnel is not connected. Connect RouteLag before running tunnel diagnostics.")]
-    NeedsConnect,
     #[error("Diagnostics failed: {0}")]
     Failed(String),
 }
@@ -459,30 +449,9 @@ pub fn build_report_text(report: &DiagnosticsReport) -> String {
                 .unwrap_or_else(|| "not provided".to_string())
         ));
         out.push_str(&format!(
-            "Frankfurt ping: {}\n",
+            "Dallas ping: {}\n",
             profile
-                .frankfurt_fortnite_ping_ms
-                .map(|v| format!("{v} ms"))
-                .unwrap_or_else(|| "not provided".to_string())
-        ));
-        out.push_str(&format!(
-            "London ping: {}\n",
-            profile
-                .london_fortnite_ping_ms
-                .map(|v| format!("{v} ms"))
-                .unwrap_or_else(|| "not provided".to_string())
-        ));
-        out.push_str(&format!(
-            "Amsterdam ping: {}\n",
-            profile
-                .amsterdam_fortnite_ping_ms
-                .map(|v| format!("{v} ms"))
-                .unwrap_or_else(|| "not provided".to_string())
-        ));
-        out.push_str(&format!(
-            "Paris ping: {}\n",
-            profile
-                .paris_fortnite_ping_ms
+                .dallas_fortnite_ping_ms
                 .map(|v| format!("{v} ms"))
                 .unwrap_or_else(|| "not provided".to_string())
         ));

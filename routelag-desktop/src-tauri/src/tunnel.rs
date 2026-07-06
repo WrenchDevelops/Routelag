@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::{self, redact_secrets};
-use crate::elevation::{self, ElevationError};
+use crate::elevation;
 use crate::route_lag_engine::{self, RouteLagEngine, RouteLagEngineError, ENGINE_MISSING_MESSAGE};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -64,17 +64,9 @@ pub enum TunnelError {
     NoConfig,
     #[error("RouteLag Engine operation failed: {0}")]
     OperationFailed(String),
+    #[cfg_attr(windows, allow(dead_code))]
     #[error("RouteLag Engine route control is only available on Windows.")]
     UnsupportedPlatform,
-}
-
-impl From<ElevationError> for TunnelError {
-    fn from(value: ElevationError) -> Self {
-        match value {
-            ElevationError::NotElevated => TunnelError::NotElevated,
-            other => TunnelError::OperationFailed(other.to_string()),
-        }
-    }
 }
 
 impl From<RouteLagEngineError> for TunnelError {

@@ -40,6 +40,7 @@ pub struct ActiveRouteSession {
 pub enum RouteSessionError {
     #[error("{ENGINE_MISSING_MESSAGE}")]
     EngineNotInstalled,
+    #[cfg_attr(windows, allow(dead_code))]
     #[error("RouteLag route sessions are only available on Windows for this beta.")]
     UnsupportedPlatform,
     #[error("Failed to generate RouteLag Engine keys: {0}")]

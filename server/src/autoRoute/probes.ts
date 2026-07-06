@@ -8,7 +8,7 @@
  */
 import * as net from "node:net";
 
-import type { RouteServerConfig } from "../config.js";
+import { endpointHost, type RouteNode } from "../nodes.js";
 import type { NodeMetrics, NodeToNodeMetric } from "./types.js";
 
 const PROBE_TIMEOUT_MS = 4000;
@@ -42,9 +42,9 @@ async function probeOnce(host: string, port: number): Promise<number | null> {
 
 export async function probeNodeToNode(
   fromNodeId: string,
-  toNode: RouteServerConfig,
+  toNode: RouteNode,
 ): Promise<NodeToNodeMetric> {
-  const host = toNode.endpointHost;
+  const host = endpointHost(toNode);
   const rawPort = toNode.endpoint.split(":")[1];
   const port = rawPort ? Number(rawPort) : 51820;
 
@@ -89,31 +89,31 @@ export async function probeNodeToNode(
  * Does NOT probe game IPs.
  */
 export async function runNodeToNodeProbes(
-  servers: RouteServerConfig[],
+  nodes: RouteNode[],
   existingMetrics: Map<string, NodeMetrics>,
 ): Promise<Map<string, NodeMetrics>> {
   const updated = new Map<string, NodeMetrics>(existingMetrics);
 
-  for (const fromServer of servers) {
-    const toServers = servers.filter((s) => s.id !== fromServer.id);
+  for (const fromNode of nodes) {
+    const toNodes = nodes.filter((n) => n.id !== fromNode.id);
     const nodeToNodeMetrics: NodeToNodeMetric[] = [];
 
-    for (const toServer of toServers) {
+    for (const toNode of toNodes) {
       // Only probe if the target has a valid endpoint host
-      if (!toServer.endpointHost) continue;
-      const metric = await probeNodeToNode(fromServer.id, toServer);
+      if (!endpointHost(toNode)) continue;
+      const metric = await probeNodeToNode(fromNode.id, toNode);
       nodeToNodeMetrics.push(metric);
     }
 
-    const existing = updated.get(fromServer.id);
-    updated.set(fromServer.id, {
-      id: fromServer.id,
-      city: fromServer.city,
-      country: fromServer.country,
-      status: fromServer.status,
-      publicEndpoint: fromServer.endpointHost,
-      wireguardEndpoint: fromServer.endpoint,
-      health: fromServer.status === "online",
+    const existing = updated.get(fromNode.id);
+    updated.set(fromNode.id, {
+      id: fromNode.id,
+      city: fromNode.city ?? "",
+      country: fromNode.country ?? "",
+      status: fromNode.available ? "online" : fromNode.status ?? "coming soon",
+      publicEndpoint: endpointHost(fromNode),
+      wireguardEndpoint: fromNode.endpoint,
+      health: fromNode.available,
       gameTargetMetrics: existing?.gameTargetMetrics ?? [],
       nodeToNodeMetrics,
       updatedAt: new Date().toISOString(),

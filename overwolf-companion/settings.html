@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>RouteLag HUD Companion</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="settings-page">
+    <h1>RouteLag HUD Companion</h1>
+    <p>
+      This companion powers the live Fortnite HUD. Keep RouteLag desktop open so layout and
+      pairing stay in sync.
+    </p>
+
+    <section class="settings-card">
+      <strong>Pairing status</strong>
+      <div id="pair-status">Checking RouteLag desktop...</div>
+      <code id="token-preview">Token: not paired</code>
+    </section>
+
+    <div class="settings-actions">
+      <button type="button" id="pair-btn">Pair with RouteLag</button>
+      <button type="button" id="overlay-btn" class="secondary">Open Overlay Preview</button>
+    </div>
+
+    <script src="bridge.js"></script>
+    <script src="settings.js"></script>
+  </body>
+</html>

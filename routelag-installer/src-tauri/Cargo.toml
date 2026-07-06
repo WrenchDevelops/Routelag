@@ -1,0 +1,56 @@
+[package]
+name = "routelag-installer"
+version = "0.1.4"
+description = "RouteLag custom installer bootstrapper"
+authors = ["RouteLag"]
+edition = "2021"
+default-run = "routelag-setup"
+
+[lib]
+name = "routelag_installer_lib"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "routelag-setup"
+path = "src/bin/routelag-setup.rs"
+
+[[bin]]
+name = "routelag-uninstall"
+path = "src/bin/routelag-uninstall.rs"
+
+[features]
+default = ["custom-protocol"]
+# Required for production builds that embed the frontend (frontendDist) instead of
+# loading the Vite dev server. `tauri build` enables this automatically; bare
+# `cargo build` does not, so we enable it by default and packaging always uses it.
+custom-protocol = ["tauri/custom-protocol"]
+# Enabled only by packaging/build-installer.ps1's second build pass, once
+# routelag-uninstall.exe has already been compiled once and can be embedded into
+# routelag-setup.exe via include_bytes!.
+embed-uninstaller = []
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+winreg = "0.52"
+mslnk = "0.1"
+sysinfo = "0.32"
+rfd = "0.15"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }

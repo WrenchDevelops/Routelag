@@ -2,9 +2,16 @@ use std::path::Path;
 
 fn main() {
     warn_if_bundled_engine_is_missing();
+    warn_if_frontend_dist_is_missing();
 
-    let mut windows = tauri_build::WindowsAttributes::new();
-    windows = windows.app_manifest(
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    let execution_level = if profile == "release" {
+        "requireAdministrator"
+    } else {
+        "asInvoker"
+    };
+
+    let manifest = format!(
         r#"
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <dependency>
@@ -19,18 +26,43 @@ fn main() {
       />
     </dependentAssembly>
   </dependency>
-      <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <requestedExecutionLevel level="{execution_level}" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>
 </assembly>
-"#,
+"#
     );
+
+    let windows = tauri_build::WindowsAttributes::new().app_manifest(&manifest);
     tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
         .expect("failed to run build script");
+}
+
+fn warn_if_frontend_dist_is_missing() {
+    let dist_index = Path::new("../dist/index.html");
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    let tauri_env = std::env::var("TAURI_ENV").unwrap_or_default();
+    let is_tauri_dev = tauri_env == "dev" || tauri_env == "development";
+
+    if !is_tauri_dev && !dist_index.exists() {
+        let message = "Desktop frontend dist is missing at routelag-desktop/dist/index.html.\n\
+            Run `npm.cmd run build` in routelag-desktop before building the Rust binary.\n\
+            Without it, the exe will try to load http://127.0.0.1:1420 and show ERR_CONNECTION_REFUSED.";
+
+        if profile == "release" {
+            panic!("{message}");
+        }
+
+        println!("cargo:warning={message}");
+    }
+
+    if dist_index.exists() {
+        println!("cargo:rerun-if-changed=../dist/index.html");
+    }
 }
 
 fn warn_if_bundled_engine_is_missing() {

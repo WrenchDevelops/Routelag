@@ -1,16 +1,16 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config;
-use crate::elevation::{self, ElevationError};
+use crate::elevation;
 use crate::logs::LogManager;
 use crate::network;
 use crate::route_lag_engine::RouteLagEngine;
 use crate::route_session;
+use crate::windows_process::hidden_command;
 
 const ROUTELAG_TUNNELS: &[&str] = &["routelag-engine", "routelag-beta", "RouteLag", "routelag"];
 const LAST_CLEANUP_FILENAME: &str = "last-cleanup-result.json";
@@ -19,6 +19,7 @@ const LAST_CLEANUP_FILENAME: &str = "last-cleanup-result.json";
 pub enum CleanupError {
     #[error("RouteLag needs administrator permission for emergency cleanup.")]
     NotElevated,
+    #[cfg_attr(windows, allow(dead_code))]
     #[error("Emergency cleanup is only available on Windows.")]
     UnsupportedPlatform,
     #[error("Emergency cleanup failed: {0}")]
@@ -77,15 +78,6 @@ impl CleanupCommandStatus {
     }
 }
 
-impl From<ElevationError> for CleanupError {
-    fn from(value: ElevationError) -> Self {
-        match value {
-            ElevationError::NotElevated => CleanupError::NotElevated,
-            other => CleanupError::OperationFailed(other.to_string()),
-        }
-    }
-}
-
 fn service_name(profile_name: &str) -> String {
     format!("WireGuardTunnel${profile_name}")
 }
@@ -123,7 +115,7 @@ fn query_routelag_services() -> Vec<TunnelServiceStatus> {
         .iter()
         .filter_map(|profile| {
             let service = service_name(profile);
-            let output = Command::new("sc").args(["query", &service]).output().ok()?;
+            let output = hidden_command("sc").args(["query", &service]).output().ok()?;
             let raw = format!(
                 "{}{}",
                 String::from_utf8_lossy(&output.stdout),
@@ -153,7 +145,7 @@ fn query_routelag_services() -> Vec<TunnelServiceStatus> {
 fn stop_tunnel_service(profile_name: &str, logs: &LogManager) -> RestoreStepResult {
     let service = service_name(profile_name);
     logs.info(&format!("Restore Internet: stopping {service}..."));
-    match Command::new("sc").args(["stop", &service]).output() {
+    match hidden_command("sc").args(["stop", &service]).output() {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -255,7 +247,7 @@ fn uninstall_tunnel_service(
 #[cfg(windows)]
 fn delete_tunnel_service(profile_name: &str, logs: &LogManager) -> RestoreStepResult {
     let service = service_name(profile_name);
-    match Command::new("sc").args(["delete", &service]).output() {
+    match hidden_command("sc").args(["delete", &service]).output() {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -292,7 +284,7 @@ fn delete_tunnel_service(profile_name: &str, logs: &LogManager) -> RestoreStepRe
 #[cfg(windows)]
 fn flush_dns(logs: &LogManager) -> RestoreStepResult {
     logs.info("Restore Internet: flushing DNS...");
-    match Command::new("ipconfig").args(["/flushdns"]).output() {
+    match hidden_command("ipconfig").args(["/flushdns"]).output() {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -431,7 +423,7 @@ pub fn force_clear_local_route_state(app_data_dir: &Path, logs: &LogManager) -> 
 
 #[cfg(windows)]
 fn run_repair_command(step_name: &str, program: &str, args: &[&str]) -> RestoreStepResult {
-    match Command::new(program).args(args).output() {
+    match hidden_command(program).args(args).output() {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);

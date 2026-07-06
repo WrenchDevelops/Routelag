@@ -20,7 +20,26 @@ routelag-desktop/dist/
 routelag-desktop/src-tauri/target/
 routelag-desktop/**/*.conf
 
+# RouteLag Installer (custom Tauri bootstrapper)
+routelag-installer/node_modules/
+routelag-installer/dist/
+routelag-installer/src-tauri/target/
+routelag-installer/packaging/*.zip
+routelag-installer/packaging/.payload-staging/
+
 # RouteLag API
 server/node_modules/
 server/dist/
 server/data/
+server/.routelag-api.*.log
+server/*.pcapng
+
+# RouteLag HUD companion
+routelag-hud/node_modules/
+routelag-hud/dist/
+routelag-hud/build/
+
+# PathGen companion server (Railway)
+pathgen-server/node_modules/
+pathgen-server/dist/
+pathgen-server/data/

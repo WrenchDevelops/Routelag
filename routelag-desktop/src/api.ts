@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import type {
   ConfigIdentity,
@@ -7,8 +8,13 @@ import type {
   DetailedPingResult,
   DiagnosticsReport,
   DnsStatus,
+  InstallInfo,
   MtuTestResult,
   NetworkAdapterInfo,
+  FortniteReplay,
+  LocalReplayFile,
+  HudBridgeStatus,
+  HudTelemetrySnapshot,
   NodeProbeInput,
   NodeProbeResult,
   OsInfo,
@@ -90,6 +96,52 @@ export const api = {
   getNetworkAdapterInfo: () =>
     invoke<NetworkAdapterInfo>("get_network_adapter_info_cmd"),
   getOsInfo: () => invoke<OsInfo>("get_os_info_cmd"),
+  listFortniteReplays: () => invoke<FortniteReplay[]>("list_fortnite_replays_cmd"),
+  scanReplayFolder: (path?: string) =>
+    invoke<LocalReplayFile[]>("scan_replay_folder", { path: path ?? null }),
+  importReplayFile: async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: "Fortnite Replay", extensions: ["replay"] }],
+    });
+    if (selected == null) {
+      throw new Error("Replay import cancelled.");
+    }
+    const path = Array.isArray(selected) ? selected[0] : selected;
+    return invoke<LocalReplayFile>("load_replay_file", { path });
+  },
+  hashReplayFile: (path: string) => invoke<string>("hash_replay_file", { path }),
+  uploadReplayFile: (path: string, apiBaseUrl: string, token: string) =>
+    invoke<string>("upload_replay_file", { path, apiBaseUrl, token }),
+  renameParsedReplay: (path: string, newName: string) =>
+    invoke<string>("rename_parsed_replay", { path, newName }),
+  selectReplayFolder: async () => {
+    const defaultPath = await invoke<string | null>("get_default_replay_folder_cmd");
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: defaultPath ?? undefined,
+    });
+    if (selected == null) {
+      throw new Error("Folder selection cancelled.");
+    }
+    return Array.isArray(selected) ? selected[0]! : selected;
+  },
+  getHudBridgeStatus: () => invoke<HudBridgeStatus>("get_hud_bridge_status_cmd"),
+  getHudTelemetrySnapshot: () =>
+    invoke<HudTelemetrySnapshot>("get_hud_telemetry_snapshot_cmd"),
+  useHudDemoData: () => invoke<void>("use_hud_demo_data_cmd"),
+  getInstallInfo: () => invoke<InstallInfo>("get_install_info_cmd"),
+  launchHudInstaller: () => invoke<void>("launch_hud_installer_cmd"),
+  saveHudLayout: (layout: string) => invoke<void>("save_hud_layout_cmd", { layout }),
+  loadHudLayout: () => invoke<string>("load_hud_layout_cmd"),
+  openHudOverlayWindow: () => invoke<void>("open_hud_overlay_window_cmd"),
+  requestHudOverlayShow: () => invoke<void>("request_hud_overlay_show_cmd"),
+  requestHudOverlayHide: () => invoke<void>("request_hud_overlay_hide_cmd"),
+  closeHudOverlayWindow: () => invoke<void>("close_hud_overlay_window_cmd"),
+  setHudOverlayEditMode: (editMode: boolean) =>
+    invoke<void>("set_hud_overlay_edit_mode_cmd", { editMode }),
+  toggleHudOverlayEditMode: () => invoke<boolean>("toggle_hud_overlay_edit_mode_cmd"),
   runMtuTest: () => invoke<MtuTestResult>("run_mtu_test_cmd"),
   getTunnelHealth: (baselinePublicIp?: string | null) =>
     invoke<TunnelHealth>("get_tunnel_health_cmd", {
@@ -112,4 +164,5 @@ export const api = {
   exportReportZip: () => invoke<string>("export_report_zip_cmd"),
   probeRouteNodes: (nodes: NodeProbeInput[]) =>
     invoke<NodeProbeResult[]>("probe_route_nodes_cmd", { nodes }),
+  exitApp: () => invoke<void>("exit_app"),
 };

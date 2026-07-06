@@ -1,0 +1,152 @@
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family:
+    "gg sans",
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #f2f3f5;
+}
+
+.hud-overlay-window {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+}
+
+.hud-live-widget {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 148px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(30, 31, 34, 0.78);
+  padding: 10px 14px;
+  color: #f2f3f5;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+}
+
+.hud-live-minimal {
+  border-color: rgba(255, 255, 255, 0.04);
+  background: rgba(30, 31, 34, 0.52);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.hud-live-compact {
+  min-width: 118px;
+  border-radius: 10px;
+  padding: 8px 11px;
+}
+
+.hud-live-small {
+  transform: scale(0.9);
+  transform-origin: top left;
+}
+
+.hud-live-large {
+  transform: scale(1.12);
+  transform-origin: top left;
+}
+
+.hud-live-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hud-live-label {
+  color: #b5bac1;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.hud-live-value {
+  color: #f2f3f5;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.settings-page {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 24px;
+  background: #0b0f17;
+  color: #e5e7eb;
+}
+
+.settings-page h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.settings-page p {
+  margin: 0 0 16px;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.settings-card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: #111827;
+  padding: 16px;
+}
+
+.settings-card strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.settings-card code {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #0b1220;
+  padding: 10px;
+  color: #c4b5fd;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.settings-actions button {
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #7c3aed, #6d44d6);
+  padding: 10px 14px;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-actions button.secondary {
+  background: #1f2937;
+}

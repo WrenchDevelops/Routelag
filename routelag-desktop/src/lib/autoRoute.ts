@@ -24,10 +24,10 @@ export interface AutoRouteResult {
 
 export async function runAutoRoute(
   game: string,
-  _region: string,
+  region: string,
 ): Promise<AutoRouteResult> {
   // 1. Fetch route candidates from API
-  const { candidates } = await routeApi.getRouteCandidates(game, "middle-east");
+  const { candidates } = await routeApi.getRouteCandidates(game, region);
 
   // 2. Build probe targets from available single-hop candidates (RouteLag-owned nodes only)
   const probeTargets = candidates
@@ -77,7 +77,7 @@ export async function runAutoRoute(
   // 5. POST /api/routes/test to get ranked + recommended result
   const testResult = await routeApi.testRoutes({
     game,
-    region: "middle-east",
+    region,
     includeChains: true,
     directMeasurement,
     clientMeasurements,

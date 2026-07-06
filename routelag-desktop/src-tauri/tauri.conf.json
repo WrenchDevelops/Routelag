@@ -1,24 +1,23 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "RouteLag Beta",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "identifier": "com.routelag.beta",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "RouteLag Beta",
-        "width": 420,
-        "height": 540,
-        "minWidth": 420,
+        "width": 1280,
+        "height": 720,
+        "minWidth": 960,
         "minHeight": 540,
-        "maxWidth": 420,
-        "maxHeight": 540,
         "resizable": false,
         "center": true,
         "decorations": false,

@@ -1,0 +1,24 @@
+{
+    "version":  "0.1.4-dev",
+    "channel":  "dev",
+    "components":  {
+                       "baseApp":  {
+                                       "version":  "0.1.4-dev",
+                                       "url":  "file://C:\\Users\\bende\\OneDrive\\Desktop\\Lunery\\Routelag\\Routelag\\routelag-installer\\installer\\test-base-app.zip",
+                                       "sha256":  "b7a7ad885b8a58e7dec8423ceff7fd7849b939f813b0fb6d1462f044d69b97c7",
+                                       "sizeBytes":  279
+                                   },
+                       "engine":  {
+                                      "version":  "0.1.4-dev",
+                                      "url":  "file://C:\\Users\\bende\\OneDrive\\Desktop\\Lunery\\Routelag\\Routelag\\routelag-installer\\installer\\test-engine.zip",
+                                      "sha256":  "402711b024138b7473d568621346ddd2d2cfe20de11f411e8e8a2c8a5eb879ae",
+                                      "sizeBytes":  294
+                                  },
+                       "hudRuntime":  {
+                                          "version":  "0.1.0-dev",
+                                          "url":  "file://C:\\Users\\bende\\OneDrive\\Desktop\\Lunery\\Routelag\\Routelag\\routelag-installer\\installer\\test-hud.zip",
+                                          "sha256":  "2670a07b0c709d08ba5bab8bba1a7608b4b46b4af58ca29e43dc29d78193dc41",
+                                          "sizeBytes":  280
+                                      }
+                   }
+}

@@ -5,7 +5,7 @@ import { DragHeader } from "./DragHeader";
 interface MiniAppShellProps {
   children: ReactNode;
   footer?: ReactNode;
-  onSettings: () => void;
+  onSettings?: () => void;
 }
 
 export function MiniAppShell({

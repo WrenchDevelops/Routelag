@@ -1,4 +1,20 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+  X,
+} from "lucide-react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
 type ToastTone = "info" | "success" | "warning" | "error";
 
@@ -6,6 +22,7 @@ interface Toast {
   id: number;
   message: string;
   tone: ToastTone;
+  exiting?: boolean;
 }
 
 interface ToastContextValue {
@@ -14,38 +31,100 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+const TOAST_DURATION_MS = 5200;
+const TOAST_EXIT_MS = 220;
+
+const toneMeta: Record<
+  ToastTone,
+  { icon: typeof Info; label: string }
+> = {
+  info: { icon: Info, label: "Info" },
+  success: { icon: CheckCircle2, label: "Success" },
+  warning: { icon: AlertTriangle, label: "Warning" },
+  error: { icon: AlertCircle, label: "Error" },
+};
+
+let toastIdCounter = 0;
+
+function nextToastId() {
+  toastIdCounter += 1;
+  return Date.now() + toastIdCounter;
+}
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timersRef = useRef<Map<number, number>>(new Map());
 
-  const showToast = useCallback((message: string, tone: ToastTone = "info") => {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, message, tone }]);
+  const dismissToast = useCallback((id: number) => {
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      window.clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
+
+    setToasts((prev) =>
+      prev.map((toast) => (toast.id === id ? { ...toast, exiting: true } : toast)),
+    );
+
     window.setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, TOAST_EXIT_MS);
+  }, []);
+
+  const showToast = useCallback(
+    (message: string, tone: ToastTone = "info") => {
+      const id = nextToastId();
+      setToasts((prev) => [...prev, { id, message, tone }]);
+
+      const timer = window.setTimeout(() => {
+        dismissToast(id);
+      }, TOAST_DURATION_MS);
+      timersRef.current.set(id, timer);
+    },
+    [dismissToast],
+  );
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const timer of timers.values()) {
+        window.clearTimeout(timer);
+      }
+      timers.clear();
+    };
   }, []);
 
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex max-w-sm flex-col gap-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`rounded-lg border px-4 py-3 text-sm shadow-lg ${
-              toast.tone === "error"
-                ? "border-error/40 bg-error/15 text-red-200"
-                : toast.tone === "warning"
-                  ? "border-warning/40 bg-warning/15 text-amber-100"
-                  : toast.tone === "success"
-                    ? "border-success/40 bg-success/15 text-green-100"
-                    : "border-border bg-card text-gray-100"
-            }`}
-          >
-            {toast.message}
-          </div>
-        ))}
-      </div>
+      {createPortal(
+        <div className="rl-toast-stack" aria-live="polite" aria-relevant="additions">
+          {toasts.map((toast) => {
+            const Icon = toneMeta[toast.tone].icon;
+            return (
+              <div
+                key={toast.id}
+                className={`rl-toast rl-toast--${toast.tone}${toast.exiting ? " is-exiting" : ""}`}
+                role="status"
+              >
+                <span className="rl-toast__icon" aria-hidden="true">
+                  <Icon size={18} strokeWidth={2.2} />
+                </span>
+                <p className="rl-toast__message">{toast.message}</p>
+                <button
+                  type="button"
+                  className="rl-toast__dismiss"
+                  aria-label={`Dismiss ${toneMeta[toast.tone].label.toLowerCase()} notification`}
+                  onClick={() => dismissToast(toast.id)}
+                >
+                  <X size={14} strokeWidth={2.4} />
+                </button>
+              </div>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
     </ToastContext.Provider>
   );
 }

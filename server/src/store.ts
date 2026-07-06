@@ -5,10 +5,10 @@ export interface RouteSession {
   sessionId: string;
   testerId: string;
   inviteCode: string;
+  nodeId: string;
   publicKey: string;
   clientIp: string;
   gameId: string;
-  serverId: string;
   serverName: string;
   endpoint: string;
   allowedIps: string;

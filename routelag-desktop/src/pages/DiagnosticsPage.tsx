@@ -28,12 +28,7 @@ export function DiagnosticsPage({
 }: DiagnosticsPageProps) {
   const running = busy === "diagnostics";
   const updateNumber = (
-    key:
-      | "normal_fortnite_ping_ms"
-      | "johannesburg_fortnite_ping_ms"
-      | "frankfurt_fortnite_ping_ms"
-      | "london_fortnite_ping_ms"
-      | "amsterdam_fortnite_ping_ms",
+    key: "normal_fortnite_ping_ms" | "johannesburg_fortnite_ping_ms" | "dallas_fortnite_ping_ms",
     value: string,
   ) => {
     onTesterProfileChange({ [key]: value ? Number(value) : null });
@@ -99,19 +94,9 @@ export function DiagnosticsPage({
             onChange={(value) => updateNumber("johannesburg_fortnite_ping_ms", value)}
           />
           <NumberField
-            label="Frankfurt"
-            value={testerProfile.frankfurt_fortnite_ping_ms}
-            onChange={(value) => updateNumber("frankfurt_fortnite_ping_ms", value)}
-          />
-          <NumberField
-            label="London"
-            value={testerProfile.london_fortnite_ping_ms}
-            onChange={(value) => updateNumber("london_fortnite_ping_ms", value)}
-          />
-          <NumberField
-            label="Amsterdam"
-            value={testerProfile.amsterdam_fortnite_ping_ms}
-            onChange={(value) => updateNumber("amsterdam_fortnite_ping_ms", value)}
+            label="Dallas"
+            value={testerProfile.dallas_fortnite_ping_ms}
+            onChange={(value) => updateNumber("dallas_fortnite_ping_ms", value)}
           />
           <TextField
             label="Best route"

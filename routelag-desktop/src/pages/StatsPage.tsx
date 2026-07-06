@@ -1,6 +1,7 @@
 import { GlowButton } from "../components/GlowButton";
 import { MiniPingGraph } from "../components/MiniPingGraph";
 import { SafetyErrorPanel } from "../components/SafetyErrorPanel";
+import { optimizeStateLabel } from "../lib/optimizeLabels";
 import type {
   BetaReportSnapshot,
   InlineError,
@@ -159,25 +160,4 @@ function resultStateLabel(
   if (routeMode === "split_route") return "Safe split-route active";
   if (routeMode === "full_tunnel") return "Blocked";
   return fallback;
-}
-
-function optimizeStateLabel(state: OptimizeState) {
-  switch (state) {
-    case "preflight":
-      return "Checking...";
-    case "creating_server_session":
-      return "Creating session...";
-    case "writing_profile":
-      return "Preparing...";
-    case "starting_engine":
-      return "Starting...";
-    case "verifying_connection":
-      return "Verifying...";
-    case "stopping":
-      return "Ending...";
-    case "rollback":
-      return "Restoring...";
-    default:
-      return "Working...";
-  }
 }

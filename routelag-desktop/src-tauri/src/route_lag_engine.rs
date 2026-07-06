@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::Output;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::TUNNEL_NAME;
+use crate::windows_process::{hidden_command, hidden_command_program, hidden_command_program_with_stdin};
 
 pub const ENGINE_MISSING_MESSAGE: &str =
     "RouteLag Engine is missing or damaged. Reinstall RouteLag.";
@@ -38,16 +39,20 @@ impl RouteLagEngine {
         let mut search_roots = Vec::new();
         if let Some(resource_dir) = resource_dir {
             search_roots.push(resource_dir.join("engine").join("windows"));
+            search_roots.push(resource_dir.join("engine"));
             search_roots.push(resource_dir.join("windows"));
         }
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
                 search_roots.push(parent.join("engine").join("windows"));
+                search_roots.push(parent.join("engine"));
                 search_roots.push(parent.join("resources").join("engine").join("windows"));
+                search_roots.push(parent.join("resources").join("engine"));
             }
         }
         if let Ok(cwd) = std::env::current_dir() {
             search_roots.push(cwd.join("engine").join("windows"));
+            search_roots.push(cwd.join("engine"));
             search_roots.push(cwd.join("src-tauri").join("engine").join("windows"));
         }
         search_roots.dedup();
@@ -85,11 +90,8 @@ impl RouteLagEngine {
         private_key: &str,
     ) -> Result<String, RouteLagEngineError> {
         let tools = self.tools_binary().ok_or(RouteLagEngineError::Missing)?;
-        let mut child = Command::new(tools)
+        let mut child = hidden_command_program_with_stdin(&tools)
             .arg("pubkey")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| RouteLagEngineError::OperationFailed(e.to_string()))?;
         if let Some(stdin) = child.stdin.as_mut() {
@@ -145,7 +147,7 @@ impl RouteLagEngine {
 
     fn run_service<const N: usize>(&self, args: [&str; N]) -> Result<Output, RouteLagEngineError> {
         let service = self.service_binary().ok_or(RouteLagEngineError::Missing)?;
-        Command::new(service)
+        hidden_command_program(&service)
             .args(args)
             .output()
             .map_err(|e| RouteLagEngineError::OperationFailed(e.to_string()))
@@ -153,7 +155,7 @@ impl RouteLagEngine {
 
     fn run_tools<const N: usize>(&self, args: [&str; N]) -> Result<Output, RouteLagEngineError> {
         let tools = self.tools_binary().ok_or(RouteLagEngineError::Missing)?;
-        Command::new(tools)
+        hidden_command_program(&tools)
             .args(args)
             .output()
             .map_err(|e| RouteLagEngineError::OperationFailed(e.to_string()))
@@ -187,7 +189,7 @@ pub fn service_name() -> String {
 
 #[cfg(windows)]
 pub fn query_service_state() -> Option<String> {
-    let output = Command::new("sc")
+    let output = hidden_command("sc")
         .args(["query", &service_name()])
         .output()
         .ok()?;

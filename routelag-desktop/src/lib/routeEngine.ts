@@ -6,6 +6,10 @@ import type {
   OptimizeState,
   RestoreInternetResult,
   RouteMode,
+  WireGuardProbeStep,
+  WireGuardProbeStepId,
+  WireGuardProbeStepStatus,
+  WireGuardProbeResult,
 } from "../types";
 import {
   getRouteInviteCode,
@@ -80,6 +84,7 @@ export async function startOptimization(
       await runPreflight(gameId, serverId);
 
       route = await createAndSaveRouteSession(gameId, serverId, setState);
+      await logOptimizationStart(serverId, route);
 
       setState("starting_engine");
       await tauriApi.connectTunnel();
@@ -204,7 +209,7 @@ export async function restoreInternet(
 
 async function createAndSaveRouteSession(
   gameId: string,
-  serverId: string,
+  nodeId: string,
   setState: (state: OptimizeState) => void,
 ): Promise<PreparedRouteSession> {
   setState("creating_server_session");
@@ -212,17 +217,17 @@ async function createAndSaveRouteSession(
     generateLocalClientKeys(),
     tauriApi.getAppVersion(),
   ]);
-  const route = await routeApi.createRouteSession(
-    gameId,
-    serverId,
+  const route = await routeApi.startRouteSession(
+    nodeId,
     keys.public_key,
     appVersion,
+    gameId,
   );
 
   const routeMode = classifyAllowedIps(route.allowedIps);
   const baseSnapshot = await buildInitialBetaReportSnapshot({
     gameId,
-    serverId,
+    serverId: nodeId,
     route,
     routeMode,
   });
@@ -276,9 +281,20 @@ async function createAndSaveRouteSession(
   return { ...route, routeMode };
 }
 
-async function runPreflight(gameId: string, serverId: string) {
-  if (!gameId || !serverId) {
-    throw new Error("Select a game and RouteLag server before optimizing.");
+async function logOptimizationStart(serverId: string, route: CreateRouteSessionResponse) {
+  const targetIps = splitAllowedIps(route.allowedIps)
+    .filter((entry) => !entry.startsWith("10."))
+    .join(",");
+  await tauriApi
+    .logClientEvent(
+      `optimization_started node=${serverId} endpoint=${route.endpoint} client_tunnel_ip=${route.clientAddress} target_ips=${targetIps || "none"} allowed_routes=${route.allowedIps}`,
+    )
+    .catch(() => undefined);
+}
+
+async function runPreflight(gameId: string, nodeId: string) {
+  if (!gameId || !nodeId) {
+    throw new Error("No routing node selected.");
   }
 
   const health = await routeApi.health(4000).catch((error) => {
@@ -323,12 +339,11 @@ async function verifyConnection(route: PreparedRouteSession) {
   const started = Date.now();
   let lastError = "Tunnel verification did not complete.";
 
-  while (Date.now() - started < 15000) {
+  while (Date.now() - started < 20000) {
     try {
-      const [status, wg, ping, dns, health, active] = await Promise.all([
+      const [status, wg, dns, health, active] = await Promise.all([
         tauriApi.tunnelStatus(),
         tauriApi.getRouteLagEngineRuntimeStatus(),
-        tauriApi.pingHost("1.1.1.1"),
         tauriApi.getDnsStatus(),
         routeApi.health(4000),
         tauriApi.loadActiveRouteSession(),
@@ -339,24 +354,25 @@ async function verifyConnection(route: PreparedRouteSession) {
       const sessionExists = active?.session_id === route.sessionId;
       const assignedTunnelIp = Boolean(active?.client_address || route.clientAddress);
       const engineStarted = status.state === "connected";
+      const routed = await verifyRoutedReachability(route.allowedIps);
       if (
         engineStarted &&
         handshakeOk &&
-        ping.packet_loss_pct < 100 &&
         dnsWorks(dns) &&
         health.ok &&
         sessionExists &&
-        assignedTunnelIp
+        assignedTunnelIp &&
+        routed.ok
       ) {
         await tauriApi
           .logClientEvent(
-            `split_route_verified session=${route.sessionId} mode=${route.routeMode} pingLoss=${ping.packet_loss_pct} public_ip_change_required=false`,
+            `split_route_verified session=${route.sessionId} mode=${route.routeMode} routed=${routed.detail} public_ip_change_required=false`,
           )
           .catch(() => undefined);
         return;
       }
 
-      lastError = `status=${status.state}; handshake=${wg.latest_handshake_secs_ago}; pingLoss=${ping.packet_loss_pct}; dns=${dnsWorks(dns)}; api=${health.ok}; session=${sessionExists}; assignedIp=${assignedTunnelIp}; routeMode=${route.routeMode}`;
+      lastError = `status=${status.state}; handshake=${wg.latest_handshake_secs_ago}; dns=${dnsWorks(dns)}; api=${health.ok}; session=${sessionExists}; assignedIp=${assignedTunnelIp}; routed=${routed.detail}; routeMode=${route.routeMode}`;
     } catch (error) {
       lastError = errorText(error);
     }
@@ -364,6 +380,316 @@ async function verifyConnection(route: PreparedRouteSession) {
   }
 
   throw new Error(`RouteLag Engine started, but verification failed. ${lastError}`);
+}
+
+export function gameRoutePolicyLabels(allowedIps: string): string[] {
+  return splitAllowedIps(allowedIps)
+    .filter((entry) => !entry.startsWith("10."))
+    .map((entry) => (entry === "18.88.0.0/16" ? "18.88.x.x" : entry.replace(/\/32$/, "")));
+}
+
+export function gameRouteHosts(allowedIps: string): string[] {
+  return splitAllowedIps(allowedIps)
+    .filter((entry) => entry.endsWith("/32") && !entry.startsWith("10."))
+    .map((entry) => entry.replace(/\/32$/, ""));
+}
+
+export function tunnelGatewayHost(allowedIps: string): string | null {
+  const tunnelCidr = splitAllowedIps(allowedIps).find(
+    (entry) => entry.endsWith("/24") && entry.startsWith("10."),
+  );
+  if (!tunnelCidr) return null;
+  const octets = tunnelCidr.split("/")[0]?.split(".") ?? [];
+  if (octets.length !== 4) return null;
+  return `${octets[0]}.${octets[1]}.${octets[2]}.1`;
+}
+
+export function routableTestHosts(allowedIps: string): string[] {
+  const gameHosts = gameRouteHosts(allowedIps);
+  const gateway = tunnelGatewayHost(allowedIps);
+  return [...new Set([...gameHosts, ...(gateway ? [gateway] : [])])];
+}
+
+export function pickLivePingHost(
+  allowedIps?: string | null,
+  fallbackAllowedIps?: string | null,
+): string {
+  const policy = allowedIps || fallbackAllowedIps || "";
+  const gameHosts = gameRouteHosts(policy);
+  if (gameHosts.length > 0) return gameHosts[0];
+  return tunnelGatewayHost(policy) ?? "1.1.1.1";
+}
+
+export function pickLivePingLabel(allowedIps?: string | null): string {
+  const policy = allowedIps || "";
+  const gameHosts = gameRouteHosts(policy);
+  if (gameHosts.length > 0) return `Game route ${gameHosts[0]}`;
+  const gateway = tunnelGatewayHost(policy);
+  if (gateway) return `Tunnel ${gateway}`;
+  return "Ping";
+}
+
+function windowsRoutePrefixesToVerify(allowedIps: string): string[] {
+  return splitAllowedIps(allowedIps).filter(
+    (entry) => entry.endsWith("/24") || entry.endsWith("/32"),
+  );
+}
+
+async function verifyRoutedReachability(allowedIps: string) {
+  const hosts = routableTestHosts(allowedIps);
+  if (!hosts.length) {
+    return {
+      ok: false,
+      detail: "No routable test targets in AllowedIPs.",
+    };
+  }
+
+  const routePrefixes = windowsRoutePrefixesToVerify(allowedIps);
+  if (routePrefixes.length) {
+    const routeEntries = await tauriApi.getAllowedIpRouteEntries(routePrefixes);
+    const missingRoutes = routeEntries.filter((entry) => !entry.installed);
+    if (missingRoutes.length) {
+      return {
+        ok: false,
+        detail: `Missing Windows routes: ${missingRoutes.map((entry) => entry.allowed_ip).join(", ")}`,
+      };
+    }
+  }
+
+  const attempts: string[] = [];
+  for (const host of hosts) {
+    try {
+      const ping = await tauriApi.pingHost(host);
+      attempts.push(
+        `${host} loss=${ping.packet_loss_pct}% avg=${ping.avg_ping_ms ?? "n/a"}ms`,
+      );
+      if (ping.packet_loss_pct < 100 && ping.avg_ping_ms != null) {
+        return {
+          ok: true,
+          detail: `Routed ping to ${host}: ${Math.round(ping.avg_ping_ms)} ms`,
+        };
+      }
+    } catch (error) {
+      attempts.push(`${host} error=${errorText(error)}`);
+    }
+  }
+
+  return {
+    ok: false,
+    detail: `No routed target responded (${attempts.join("; ")})`,
+  };
+}
+
+const PROBE_STEP_DEFS: Array<{ id: WireGuardProbeStepId; label: string }> = [
+  { id: "api_health", label: "RouteLag API health" },
+  { id: "local_ready", label: "Local engine and permissions" },
+  { id: "server_session", label: "WireGuard session on server" },
+  { id: "route_policy", label: "Split-route policy" },
+  { id: "profile", label: "Local WireGuard profile" },
+  { id: "tunnel", label: "RouteLag Engine tunnel" },
+  { id: "handshake", label: "WireGuard handshake" },
+  { id: "windows_routes", label: "Windows route entries" },
+  { id: "routed_ping", label: "Routed target reachability" },
+  { id: "cleanup", label: "Cleanup test session" },
+];
+
+function initialProbeSteps(): WireGuardProbeStep[] {
+  return PROBE_STEP_DEFS.map((step) => ({
+    ...step,
+    status: "pending" as const,
+  }));
+}
+
+function patchProbeStep(
+  steps: WireGuardProbeStep[],
+  id: WireGuardProbeStepId,
+  status: WireGuardProbeStepStatus,
+  detail?: string,
+) {
+  const index = steps.findIndex((step) => step.id === id);
+  if (index === -1) return steps;
+  steps[index] = { ...steps[index], status, detail };
+  return [...steps];
+}
+
+export async function testWireGuardServer(
+  gameId: string,
+  serverId: string,
+  options: {
+    cleanup?: boolean;
+    onStep?: (steps: WireGuardProbeStep[]) => void;
+  } = {},
+): Promise<WireGuardProbeResult> {
+  return withOperation(async () => {
+    const cleanup = options.cleanup !== false;
+    let steps = initialProbeSteps();
+    const publish = (id: WireGuardProbeStepId, status: WireGuardProbeStepStatus, detail?: string) => {
+      steps = patchProbeStep(steps, id, status, detail) ?? steps;
+      options.onStep?.(steps);
+    };
+
+    let route: PreparedRouteSession | null = null;
+
+    const fail = async (id: WireGuardProbeStepId, detail: string): Promise<WireGuardProbeResult> => {
+      publish(id, "fail", detail);
+      if (route?.sessionId) {
+        publish("cleanup", cleanup ? "running" : "skip", cleanup ? undefined : "Left connected for inspection");
+        if (cleanup) {
+          try {
+            await rollbackRouteSession(route.sessionId, new Error(detail));
+            publish("cleanup", "pass", "Test session removed");
+          } catch (error) {
+            publish("cleanup", "fail", errorText(error));
+          }
+        }
+      }
+      return {
+        ok: false,
+        steps,
+        sessionId: route?.sessionId,
+        allowedIps: route?.allowedIps,
+        routeMode: route?.routeMode,
+      };
+    };
+
+    try {
+      publish("api_health", "running");
+      const health = await routeApi.health(4000).catch((error) => {
+        throw new Error(apiUnreachableMessage(error));
+      });
+      if (!health.ok || health.peerMode !== "wg") {
+        return fail(
+          "api_health",
+          `Expected peerMode wg, got ${health.peerMode || "unknown"}.`,
+        );
+      }
+      publish("api_health", "pass", `API online · peerMode=${health.peerMode}`);
+
+      publish("local_ready", "running");
+      const [elevated, engineAvailable, recovery] = await Promise.all([
+        tauriApi.isElevated(),
+        tauriApi.isRouteLagEngineAvailable(),
+        tauriApi.getRecoveryStatus(),
+      ]);
+      if (!elevated) {
+        return fail("local_ready", "Administrator permission is required.");
+      }
+      if (!engineAvailable) {
+        return fail("local_ready", "RouteLag Engine is missing or damaged.");
+      }
+      if (recovery.stale_state_detected) {
+        return fail(
+          "local_ready",
+          "Previous optimization did not close cleanly. Use Restore Internet first.",
+        );
+      }
+      publish("local_ready", "pass", "Engine installed · running as admin");
+
+      publish("server_session", "running");
+      route = await createAndSaveRouteSession(gameId, serverId, setNoopState);
+      publish(
+        "server_session",
+        "pass",
+        `Session ${route.sessionId.slice(0, 8)}… · endpoint ${route.endpoint}`,
+      );
+
+      publish("route_policy", "running");
+      const targets = routableTestHosts(route.allowedIps);
+      if (route.routeMode !== "split_route") {
+        return fail(
+          "route_policy",
+          `Unsafe route mode ${route.routeMode}. AllowedIPs=${route.allowedIps || "empty"}`,
+        );
+      }
+      publish(
+        "route_policy",
+        "pass",
+        `Split route · ${splitAllowedIps(route.allowedIps).join(", ")} · test targets: ${targets.join(", ") || "none"}`,
+      );
+
+      publish("profile", "pass", `Tunnel IP ${route.clientAddress}`);
+
+      publish("tunnel", "running");
+      await tauriApi.connectTunnel();
+      const tunnel = await tauriApi.tunnelStatus();
+      if (tunnel.state !== "connected" && tunnel.state !== "connecting") {
+        return fail("tunnel", `Tunnel state=${tunnel.state}`);
+      }
+      publish("tunnel", "pass", `Tunnel ${tunnel.state}`);
+
+      publish("handshake", "running");
+      const handshakeDeadline = Date.now() + 15000;
+      let handshakeDetail = "No handshake yet";
+      while (Date.now() < handshakeDeadline) {
+        const wg = await tauriApi.getRouteLagEngineRuntimeStatus();
+        const handshakeOk =
+          wg.latest_handshake_secs_ago == null || wg.latest_handshake_secs_ago < 180;
+        if (handshakeOk && wg.latest_handshake_secs_ago != null) {
+          handshakeDetail = `Handshake ${wg.latest_handshake_secs_ago}s ago · endpoint ${wg.endpoint ?? route.endpoint}`;
+          publish("handshake", "pass", handshakeDetail);
+          break;
+        }
+        if (wg.latest_handshake_secs_ago != null) {
+          handshakeDetail = `Handshake ${wg.latest_handshake_secs_ago}s ago`;
+        }
+        await delay(1200);
+      }
+      if (steps.find((step) => step.id === "handshake")?.status !== "pass") {
+        return fail(
+          "handshake",
+          `${handshakeDetail}. UDP to the server may be blocked or the peer was not provisioned.`,
+        );
+      }
+
+      publish("windows_routes", "running");
+      const routePrefixes = windowsRoutePrefixesToVerify(route.allowedIps);
+      const routeEntries = routePrefixes.length
+        ? await tauriApi.getAllowedIpRouteEntries(routePrefixes)
+        : [];
+      const missingRoutes = routeEntries.filter((entry) => !entry.installed);
+      if (missingRoutes.length) {
+        return fail(
+          "windows_routes",
+          `Missing routes: ${missingRoutes.map((entry) => entry.allowed_ip).join(", ")}`,
+        );
+      }
+      publish(
+        "windows_routes",
+        "pass",
+        routeEntries.length
+          ? `${routeEntries.length} route ${routeEntries.length === 1 ? "entry" : "entries"} installed`
+          : "Game block routes use WireGuard policy only (no /24 or /32 prefixes to verify)",
+      );
+
+      publish("routed_ping", "running");
+      const routed = await verifyRoutedReachability(route.allowedIps);
+      if (!routed.ok) {
+        return fail("routed_ping", routed.detail);
+      }
+      publish("routed_ping", "pass", routed.detail);
+
+      if (cleanup) {
+        publish("cleanup", "running");
+        await rollbackRouteSession(route.sessionId, new Error("WireGuard probe cleanup"));
+        publish("cleanup", "pass", "Test session removed");
+      } else {
+        publish("cleanup", "skip", "Session left active");
+      }
+
+      return {
+        ok: true,
+        steps,
+        sessionId: route.sessionId,
+        allowedIps: route.allowedIps,
+        routeMode: route.routeMode,
+      };
+    } catch (error) {
+      const message = errorText(error);
+      const runningStep =
+        [...steps].reverse().find((step) => step.status === "running")?.id ?? "server_session";
+      return fail(runningStep, message);
+    }
+  });
 }
 
 async function cleanupCreatedRouteSession(
@@ -441,12 +767,23 @@ export function splitAllowedIps(allowedIps: string): string[] {
 }
 
 function isValidAllowedIpRange(entry: string): boolean {
-  const ipv4 = entry.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/32$/);
-  if (ipv4) {
-    return ipv4[1].split(".").every((octet) => {
+  if (entry === "18.88.0.0/16") return true;
+
+  const ipv4Host = entry.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/32$/);
+  if (ipv4Host) {
+    return ipv4Host[1].split(".").every((octet) => {
       const value = Number(octet);
       return Number.isInteger(value) && value >= 0 && value <= 255;
     });
+  }
+
+  const ipv4Tunnel = entry.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/24$/);
+  if (ipv4Tunnel) {
+    const parts = ipv4Tunnel[1].split(".").map(Number);
+    if (parts.length !== 4 || parts.some((octet) => octet < 0 || octet > 255)) {
+      return false;
+    }
+    return parts[0] === 10 && parts[3] === 0;
   }
 
   return false;

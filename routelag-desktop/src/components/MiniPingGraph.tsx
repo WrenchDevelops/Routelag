@@ -1,8 +1,11 @@
+import { memo } from "react";
+
 interface MiniPingGraphProps {
   samples: number[];
+  emptyLabel?: string;
 }
 
-export function MiniPingGraph({ samples }: MiniPingGraphProps) {
+function MiniPingGraphComponent({ samples, emptyLabel = "Run ping test" }: MiniPingGraphProps) {
   const values = samples.filter((sample) => Number.isFinite(sample));
   const path = values.length >= 2 ? buildPath(values) : null;
   const latest = values[values.length - 1];
@@ -19,7 +22,7 @@ export function MiniPingGraph({ samples }: MiniPingGraphProps) {
       {path ? (
         <span className="graph-value">{Math.round(latest ?? 0)}ms</span>
       ) : (
-        <span className="graph-empty">Run ping test</span>
+        <span className="graph-empty">{emptyLabel}</span>
       )}
       <span className="graph-label bottom">Time</span>
     </div>
@@ -45,3 +48,5 @@ function buildPath(samples: number[]): string {
     })
     .join(" ");
 }
+
+export const MiniPingGraph = memo(MiniPingGraphComponent);

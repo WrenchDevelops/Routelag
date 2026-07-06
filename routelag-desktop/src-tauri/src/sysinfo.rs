@@ -1,9 +1,13 @@
 use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::time::SystemTime;
 
 use crate::elevation;
 use crate::route_lag_engine::RouteLagEngine;
 use crate::tunnel;
+use crate::windows_process::{hidden_command, hidden_powershell_command};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsInfo {
@@ -24,6 +28,14 @@ pub struct OsInfo {
 pub struct NetworkAdapterInfo {
     pub adapter_name: Option<String>,
     pub connection_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FortniteReplay {
+    pub name: String,
+    pub path: String,
+    pub modified_at: String,
+    pub size_bytes: u64,
 }
 
 pub fn get_os_info(app_version: &str, engine: &RouteLagEngine) -> OsInfo {
@@ -52,6 +64,73 @@ pub fn get_network_adapter_info() -> NetworkAdapterInfo {
     }
 }
 
+pub fn list_fortnite_replays() -> Vec<FortniteReplay> {
+    let Some(dir) = fortnite_replay_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    // Keep only the newest 5 while scanning so large demo folders stay cheap.
+    let mut top: Vec<(SystemTime, FortniteReplay)> = Vec::with_capacity(5);
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let is_replay = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("replay"))
+            .unwrap_or(false);
+        if !is_replay {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        let replay = FortniteReplay {
+            name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Fortnite replay")
+                .to_string(),
+            path: path.display().to_string(),
+            modified_at: chrono::DateTime::<Local>::from(modified)
+                .format("%Y-%m-%d %H:%M")
+                .to_string(),
+            size_bytes: metadata.len(),
+        };
+
+        if top.len() < 5 {
+            top.push((modified, replay));
+            top.sort_by(|a, b| b.0.cmp(&a.0));
+            continue;
+        }
+        if modified > top[4].0 {
+            top[4] = (modified, replay);
+            top.sort_by(|a, b| b.0.cmp(&a.0));
+        }
+    }
+
+    top.into_iter().map(|(_, replay)| replay).collect()
+}
+
+fn fortnite_replay_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .map(|root| root.join("FortniteGame").join("Saved").join("Demos"))
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 fn detect_os_name() -> String {
     std::env::consts::OS.to_string()
 }
@@ -59,8 +138,7 @@ fn detect_os_name() -> String {
 fn detect_os_version() -> String {
     #[cfg(windows)]
     {
-        use std::process::Command;
-        if let Ok(output) = Command::new("cmd").args(["/C", "ver"]).output() {
+        if let Ok(output) = hidden_command("cmd").args(["/C", "ver"]).output() {
             return String::from_utf8_lossy(&output.stdout).trim().to_string();
         }
     }
@@ -77,8 +155,7 @@ fn detect_os_version() -> String {
 fn detect_cpu_name() -> Option<String> {
     #[cfg(windows)]
     {
-        use std::process::Command;
-        let output = Command::new("wmic")
+        let output = hidden_command("wmic")
             .args(["cpu", "get", "name"])
             .output()
             .ok()?;
@@ -97,8 +174,7 @@ fn detect_cpu_name() -> Option<String> {
 fn detect_ram_gb() -> Option<f64> {
     #[cfg(windows)]
     {
-        use std::process::Command;
-        let output = Command::new("wmic")
+        let output = hidden_command("wmic")
             .args(["computersystem", "get", "TotalPhysicalMemory"])
             .output()
             .ok()?;
@@ -123,13 +199,9 @@ fn detect_timezone() -> String {
 fn detect_default_adapter() -> Option<String> {
     #[cfg(windows)]
     {
-        use std::process::Command;
-        let output = Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                "Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1 -ExpandProperty InterfaceAlias",
-            ])
+        let output = hidden_powershell_command(
+            "Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1 -ExpandProperty InterfaceAlias",
+        )
             .output()
             .ok()?;
         let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -148,13 +220,9 @@ fn detect_default_adapter() -> Option<String> {
 fn detect_connection_type() -> Option<String> {
     #[cfg(windows)]
     {
-        use std::process::Command;
-        let output = Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                "$if=Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1 -ExpandProperty InterfaceAlias; Get-NetAdapter -Name $if | Select-Object -ExpandProperty MediaType",
-            ])
+        let output = hidden_powershell_command(
+            "$if=Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1 -ExpandProperty InterfaceAlias; Get-NetAdapter -Name $if | Select-Object -ExpandProperty MediaType",
+        )
             .output()
             .ok()?;
         let t = String::from_utf8_lossy(&output.stdout).trim().to_string();

@@ -14,6 +14,17 @@ export interface RouteCandidate {
   canStart: boolean;
   estimateOnly: boolean;
   chainSupported: boolean;
+  gameRouteCidrs?: string[];
+  routeTargets?: Array<{
+    id: string;
+    ip: string;
+    cidr: string;
+    region: string;
+    nodeId: string;
+    protocol?: "udp" | "tcp";
+    ports?: number[];
+    enabled: boolean;
+  }>;
 }
 
 export interface ClientMeasurement {

@@ -34,7 +34,7 @@ impl LogManager {
     }
 
     pub fn log(&self, level: &str, message: &str) {
-        let _guard = self.mutex.lock().unwrap();
+        let _guard = self.mutex.lock().unwrap_or_else(|error| error.into_inner());
         let redacted = redact_secrets(message);
         let line = format!(
             "[{}] [{}] {}\n",
@@ -114,7 +114,7 @@ impl LogManager {
     }
 
     pub fn clear(&self) -> Result<(), LogError> {
-        let _guard = self.mutex.lock().unwrap();
+        let _guard = self.mutex.lock().unwrap_or_else(|error| error.into_inner());
         if self.path.is_file() {
             fs::write(&self.path, "").map_err(|e| LogError::WriteFailed(e.to_string()))?;
         }

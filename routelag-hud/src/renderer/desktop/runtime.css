@@ -1,0 +1,138 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: #101016;
+  color: #f8f7ff;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+
+.runtime-shell {
+  min-height: 100vh;
+  padding: 28px;
+  background:
+    linear-gradient(145deg, rgba(123, 92, 255, 0.18), rgba(255, 255, 255, 0) 34%),
+    #101016;
+}
+
+header {
+  position: relative;
+  padding-bottom: 20px;
+}
+
+header p {
+  margin: 0 0 7px;
+  color: #a89bcb;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.05;
+  font-weight: 780;
+}
+
+.demo-pill {
+  position: absolute;
+  top: 0;
+  right: 0;
+  border: 1px solid rgba(190, 169, 255, 0.28);
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: #eee7ff;
+  background: rgba(84, 62, 148, 0.32);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.status-panel {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 22px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  padding: 14px;
+  font-size: 14px;
+}
+
+.status-row strong {
+  font-size: 13px;
+}
+
+.active {
+  color: #b8ffdb;
+}
+
+.waiting {
+  color: #c8bfdc;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+button {
+  min-height: 42px;
+  border: 1px solid rgba(185, 164, 255, 0.25);
+  border-radius: 10px;
+  background: rgba(123, 92, 255, 0.22);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+button:hover {
+  background: rgba(123, 92, 255, 0.32);
+}
+
+button.quiet {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 24px;
+  color: #9d94b7;
+  font-size: 12px;
+}
+
+.runtime-error {
+  margin: 0 0 16px;
+  color: #ffb4b4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.runtime-hint {
+  margin: 0 0 16px;
+  color: #c8bfdc;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

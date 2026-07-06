@@ -24,13 +24,7 @@ pub struct TesterProfile {
     #[serde(default)]
     pub johannesburg_fortnite_ping_ms: Option<u32>,
     #[serde(default)]
-    pub frankfurt_fortnite_ping_ms: Option<u32>,
-    #[serde(default)]
-    pub london_fortnite_ping_ms: Option<u32>,
-    #[serde(default)]
-    pub amsterdam_fortnite_ping_ms: Option<u32>,
-    #[serde(default)]
-    pub paris_fortnite_ping_ms: Option<u32>,
+    pub dallas_fortnite_ping_ms: Option<u32>,
     pub fortnite_region: String,
     #[serde(default)]
     pub packet_loss_notes: String,
@@ -49,8 +43,6 @@ pub struct TesterProfile {
 
 #[derive(Debug, Error)]
 pub enum ProfileError {
-    #[error("Failed to read tester profile: {0}")]
-    ReadFailed(String),
     #[error("Failed to save tester profile: {0}")]
     SaveFailed(String),
 }
@@ -89,10 +81,7 @@ pub fn profile_is_empty(profile: &TesterProfile) -> bool {
         && profile.routelag_fortnite_ping_ms.is_none()
         && profile.routelag_fortnite_packet_loss_pct.is_none()
         && profile.johannesburg_fortnite_ping_ms.is_none()
-        && profile.frankfurt_fortnite_ping_ms.is_none()
-        && profile.london_fortnite_ping_ms.is_none()
-        && profile.amsterdam_fortnite_ping_ms.is_none()
-        && profile.paris_fortnite_ping_ms.is_none()
+        && profile.dallas_fortnite_ping_ms.is_none()
         && profile.fortnite_region.is_empty()
         && profile.packet_loss_notes.is_empty()
         && profile.best_route.is_empty()

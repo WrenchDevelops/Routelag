@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -8,8 +7,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::config::TUNNEL_NAME;
 use crate::tunnel;
+use crate::windows_process::hidden_command;
 
 pub const DEFAULT_PING_HOST: &str = "1.1.1.1";
 const ROUTE_TEST_FILENAME: &str = "route-test-latest.json";
@@ -73,11 +72,11 @@ pub fn get_public_ip() -> Result<String, NetworkError> {
 
 pub fn ping_host(host: &str) -> Result<PingResult, NetworkError> {
     let output = if cfg!(windows) {
-        Command::new("ping")
+        hidden_command("ping")
             .args(["-n", "4", "-w", "1000", host])
             .output()
     } else {
-        Command::new("ping").args(["-c", "4", host]).output()
+        hidden_command("ping").args(["-c", "4", host]).output()
     }
     .map_err(|e| NetworkError::PingFailed(e.to_string()))?;
 
@@ -210,8 +209,4 @@ pub fn load_route_test(app_data_dir: &Path) -> Option<RouteTestResult> {
 pub fn remove_route_test(app_data_dir: &Path) {
     let path = app_data_dir.join(ROUTE_TEST_FILENAME);
     let _ = fs::remove_file(path);
-}
-
-pub fn tunnel_name() -> &'static str {
-    TUNNEL_NAME
 }

@@ -2,12 +2,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ElevationError {
-    #[error(
-        "RouteLag needs administrator permission to control the RouteLag Engine route session."
-    )]
-    NotElevated,
     #[error("Administrator permission was denied. RouteLag will stay in normal mode.")]
     ElevationDenied,
+    #[cfg_attr(windows, allow(dead_code))]
     #[error("Elevation is only supported on Windows.")]
     UnsupportedPlatform,
     #[error("Failed to restart as administrator: {0}")]

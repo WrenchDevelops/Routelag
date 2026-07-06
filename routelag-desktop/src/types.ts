@@ -18,10 +18,7 @@ export interface TesterProfile {
   routelag_fortnite_ping_ms: number | null;
   routelag_fortnite_packet_loss_pct: number | null;
   johannesburg_fortnite_ping_ms: number | null;
-  frankfurt_fortnite_ping_ms: number | null;
-  london_fortnite_ping_ms: number | null;
-  amsterdam_fortnite_ping_ms: number | null;
-  paris_fortnite_ping_ms: number | null;
+  dallas_fortnite_ping_ms: number | null;
   fortnite_region: string;
   packet_loss_notes: string;
   best_route: string;
@@ -97,6 +94,35 @@ export type OptimizeState =
   | "error";
 
 export type RouteMode = "full_tunnel" | "split_route" | "invalid";
+
+export type WireGuardProbeStepId =
+  | "api_health"
+  | "local_ready"
+  | "server_session"
+  | "route_policy"
+  | "profile"
+  | "tunnel"
+  | "handshake"
+  | "windows_routes"
+  | "routed_ping"
+  | "cleanup";
+
+export type WireGuardProbeStepStatus = "pending" | "running" | "pass" | "fail" | "skip";
+
+export interface WireGuardProbeStep {
+  id: WireGuardProbeStepId;
+  label: string;
+  status: WireGuardProbeStepStatus;
+  detail?: string;
+}
+
+export interface WireGuardProbeResult {
+  ok: boolean;
+  steps: WireGuardProbeStep[];
+  sessionId?: string;
+  allowedIps?: string;
+  routeMode?: RouteMode;
+}
 
 export interface LifecycleStressStatus {
   start_stop_cycles: number;
@@ -248,6 +274,207 @@ export interface NetworkAdapterInfo {
   connection_type: string | null;
 }
 
+export interface FortniteReplay {
+  name: string;
+  path: string;
+  modified_at: string;
+  size_bytes: number;
+}
+
+export interface LocalReplayFile extends FortniteReplay {
+  file_hash: string | null;
+  status: string;
+}
+
+export type ReplayJobStatus =
+  | "local_found"
+  | "queued"
+  | "uploading"
+  | "uploaded"
+  | "osirion_pending"
+  | "osirion_complete"
+  | "fetching_match_data"
+  | "parsed"
+  | "failed";
+
+export interface ReplayJob {
+  id: string;
+  userId: string;
+  inviteCode: string;
+  fileName: string;
+  fileHash: string;
+  fileSizeBytes: number;
+  status: ReplayJobStatus;
+  provider: "osirion";
+  providerTrackingId?: string;
+  providerMatchId?: string;
+  replayId?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  parsedAt?: string;
+  lastCheckedAt?: string;
+}
+
+export interface PathGenKeyMoment {
+  id: string;
+  type: string;
+  timestampSeconds: number;
+  title: string;
+  description?: string;
+  importance?: string;
+  thumbnailUrl?: string;
+}
+
+export interface PathGenReplayQuota {
+  used: number;
+  limit: number;
+  remaining: number;
+  monthKey: string;
+  dailyUsed: number;
+  dailyLimit: number;
+  dailyRemaining: number;
+  dayKey: string;
+  cooldownMs: number;
+  cooldownRemainingMs: number;
+  canTrigger: boolean;
+}
+
+export interface PathGenReplaySummary {
+  id: string;
+  userId: string;
+  jobId: string;
+  fileName: string;
+  fileHash: string;
+  status: "parsing" | "parsed" | "failed";
+  parseTier?: "basic" | "deep";
+  deepParseStatus?: "none" | "available" | "analyzing" | "parsed" | "failed";
+  deepParsedAt?: string | null;
+  deepParseError?: string | null;
+  mode?: string | null;
+  playlist?: string | null;
+  region?: string | null;
+  startedAt?: string | number | null;
+  durationSeconds?: number | null;
+  placement?: number | null;
+  eliminations?: number | null;
+  assists?: number | null;
+  deaths?: number | null;
+  headshots?: number | null;
+  damageDealt?: number | null;
+  damageTaken?: number | null;
+  accuracy?: number | null;
+  materialsFarmed?: number | null;
+  distanceTraveled?: number | null;
+  timeAliveSeconds?: number | null;
+  thumbnailUrl?: string | null;
+  createdAt: string;
+  parsedAt?: string | null;
+}
+
+export interface PathGenReplayDetail {
+  summary: PathGenReplaySummary;
+  player?: unknown;
+  match?: unknown;
+  stats?: Record<string, unknown>;
+  timeline?: unknown[];
+  keyMoments: PathGenKeyMoment[];
+  fights?: unknown[];
+  eliminations?: unknown[];
+  deaths?: unknown[];
+  damageEvents?: unknown[];
+  inventoryTimeline?: unknown[];
+  rotations?: unknown[];
+  zoneStats?: unknown[];
+}
+
+export interface HudMaterials {
+  wood?: number;
+  stone?: number;
+  metal?: number;
+}
+
+export interface HudInventoryItem {
+  slot: number;
+  name: string;
+  rarity?: number;
+  ammo?: number;
+  count?: number;
+}
+
+export interface HudStorm {
+  current?: number;
+  max?: number;
+  damage?: number;
+}
+
+export interface HudTelemetryData {
+  connected?: boolean;
+  fortniteDetected?: boolean;
+  matchActive?: boolean;
+  phase?: string;
+  ping?: number;
+  health?: number;
+  shield?: number;
+  overShield?: number;
+  kills?: number;
+  assists?: number;
+  deaths?: number;
+  placement?: number;
+  damageDealt?: number;
+  damageTaken?: number;
+  totalPlayers?: number;
+  totalTeams?: number;
+  matchMode?: string;
+  isRanked?: boolean;
+  buildMode?: string;
+  materials?: HudMaterials;
+  inventory?: unknown;
+  location?: unknown;
+  storm?: HudStorm;
+  fps?: number;
+  lastUpdateAt?: number;
+}
+
+export interface HudTelemetryMessage {
+  source: "routelag-hud-companion" | "routelag-demo-data" | string;
+  game: "fortnite" | string;
+  type: "hud_update" | "match_event" | "connection_status";
+  timestamp: number;
+  data: HudTelemetryData;
+}
+
+export interface HudBridgeStatus {
+  url: string;
+  token: string;
+  connected: boolean;
+  stale: boolean;
+  lastEventAt: number | null;
+  eventCount: number;
+  rejectedCount: number;
+  serverStarted: boolean;
+  serverError: string | null;
+  fortniteDetected: boolean;
+  matchActive: boolean;
+}
+
+export interface HudTelemetrySnapshot {
+  status: HudBridgeStatus;
+  latest: HudTelemetryMessage | null;
+}
+
+export interface InstallInfo {
+  hudInstalled: boolean;
+  hudPath: string | null;
+  hudCorrupt: boolean;
+  engineInstalled: boolean;
+  enginePath: string | null;
+  installPath: string | null;
+  installedVersion: string | null;
+  detectionMethod: string;
+}
+
 export interface RouteComparison {
   ping_delta_ms: number | null;
   normal_avg_ping_ms: number | null;
@@ -361,10 +588,7 @@ export const defaultTesterProfile = (): TesterProfile => ({
   routelag_fortnite_ping_ms: null,
   routelag_fortnite_packet_loss_pct: null,
   johannesburg_fortnite_ping_ms: null,
-  frankfurt_fortnite_ping_ms: null,
-  london_fortnite_ping_ms: null,
-  amsterdam_fortnite_ping_ms: null,
-  paris_fortnite_ping_ms: null,
+  dallas_fortnite_ping_ms: null,
   fortnite_region: "Middle East",
   packet_loss_notes: "",
   best_route: "",

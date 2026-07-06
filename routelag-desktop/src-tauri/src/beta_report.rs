@@ -1,9 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::windows_process::hidden_powershell_command;
 
 const BETA_REPORT_FILENAME: &str = "beta-report-latest.json";
 
@@ -124,9 +125,7 @@ fn route_entry_for_allowed_ip(allowed_ip: &str) -> AllowedIpRouteEntry {
         "Get-NetRoute -DestinationPrefix '{}' -ErrorAction SilentlyContinue | Select-Object DestinationPrefix,InterfaceAlias,NextHop,RouteMetric,Protocol | ConvertTo-Json -Compress",
         allowed_ip
     );
-    match Command::new("powershell")
-        .args(["-NoProfile", "-Command", &script])
-        .output()
+    match hidden_powershell_command(&script).output()
     {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();

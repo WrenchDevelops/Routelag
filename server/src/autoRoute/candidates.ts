@@ -1,11 +1,8 @@
-import type { RouteServerConfig } from "../config.js";
+import { enabledTargets, targetCidrs, type RouteNode } from "../nodes.js";
 import type { RouteCandidate } from "./types.js";
 
-export function buildCandidates(
-  servers: RouteServerConfig[],
-  game: string,
-): RouteCandidate[] {
-  const gameServers = servers.filter((server) => server.gameId === game);
+export function buildCandidates(nodes: RouteNode[], game: string): RouteCandidate[] {
+  const gameNodes = nodes.filter((node) => node.gameId === game);
 
   const candidates: RouteCandidate[] = [
     {
@@ -17,28 +14,32 @@ export function buildCandidates(
       canStart: false,
       estimateOnly: false,
       chainSupported: false,
+      gameRouteCidrs: [],
+      routeTargets: [],
     },
   ];
 
-  for (const server of gameServers) {
+  for (const node of gameNodes) {
     candidates.push({
-      id: server.id,
+      id: node.id,
       type: "single",
-      label: server.name,
+      label: node.name,
       hopCount: 1,
-      serverId: server.id,
-      status: server.status,
-      canStart: server.status === "online",
+      serverId: node.id,
+      status: node.available ? "online" : node.status ?? "coming soon",
+      canStart: node.available && node.provisioner.mode !== "disabled",
       estimateOnly: false,
       chainSupported: false,
+      gameRouteCidrs: targetCidrs(node),
+      routeTargets: enabledTargets(node).map((target) => ({ ...target, nodeId: node.id })),
     });
   }
 
   // Chain candidates: Johannesburg as entry, each non-Johannesburg node as exit.
   // Multi-hop is not yet implemented — all chain candidates are estimate-only.
-  const entryNode = gameServers.find((server) => server.id === "johannesburg-beta");
+  const entryNode = gameNodes.find((node) => node.id === "johannesburg-beta");
   if (entryNode) {
-    const exitNodes = gameServers.filter((server) => server.id !== "johannesburg-beta");
+    const exitNodes = gameNodes.filter((node) => node.id !== "johannesburg-beta");
     for (const exitNode of exitNodes) {
       candidates.push({
         id: `${entryNode.id}--${exitNode.id}`,
@@ -51,9 +52,17 @@ export function buildCandidates(
         canStart: false,
         estimateOnly: true,
         chainSupported: false,
+        gameRouteCidrs: targetCidrs(exitNode),
+        routeTargets: enabledTargets(exitNode).map((target) => ({ ...target, nodeId: exitNode.id })),
       });
     }
   }
 
   return candidates;
+}
+
+export function listRouteTargetsForGame(nodes: RouteNode[], game: string) {
+  return nodes
+    .filter((node) => node.gameId === game)
+    .flatMap((node) => enabledTargets(node).map((target) => ({ ...target, nodeId: node.id })));
 }

@@ -1,5 +1,5 @@
 use std::net::{TcpStream, ToSocketAddrs};
-use std::process::{Command, Output, Stdio};
+use std::process::Output;
 use std::time::{Duration, Instant};
 
 use regex::Regex;
@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::redact_secrets;
+use crate::windows_process::hidden_command;
 
 pub const DIAG_PING_HOSTS: &[&str] = &["1.1.1.1", "8.8.8.8", "cloudflare.com", "google.com"];
 pub const DIAG_TRACEROUTE_HOSTS: &[&str] = &["1.1.1.1", "cloudflare.com"];
@@ -331,10 +332,8 @@ fn run_command_with_timeout(
     args: &[&str],
     timeout: Duration,
 ) -> std::io::Result<Option<Output>> {
-    let mut child = Command::new(program)
+    let mut child = hidden_command(program)
         .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
         .spawn()?;
     let started = Instant::now();
     loop {

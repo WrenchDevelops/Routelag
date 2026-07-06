@@ -1,0 +1,83 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+
+.overlay-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  color: #fff;
+  pointer-events: none;
+}
+
+.hud-widget {
+  position: fixed;
+  min-width: 112px;
+  border: 1px solid rgba(185, 164, 255, 0.24);
+  border-radius: 12px;
+  background: rgba(16, 16, 24, 0.7);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+  padding: 9px 11px;
+  backdrop-filter: blur(12px);
+}
+
+.widget-medium {
+  min-width: 138px;
+  padding: 11px 13px;
+}
+
+.widget-large {
+  min-width: 168px;
+  padding: 13px 15px;
+}
+
+.hud-label {
+  display: block;
+  color: rgba(231, 229, 255, 0.66);
+  font-size: 11px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.hud-value {
+  display: block;
+  margin-top: 3px;
+  color: #fff;
+  font-size: 20px;
+  line-height: 1.1;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.widget-medium .hud-value {
+  font-size: 23px;
+}
+
+.widget-large .hud-value {
+  font-size: 27px;
+}
+
+.demo-watermark {
+  position: fixed;
+  left: 50%;
+  bottom: 34px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(185, 164, 255, 0.35);
+  border-radius: 12px;
+  background: rgba(40, 28, 72, 0.76);
+  padding: 8px 14px;
+  color: #eee7ff;
+  font-size: 12px;
+  font-weight: 800;
+}

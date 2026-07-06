@@ -1,48 +1,54 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { MouseEvent } from "react";
+import type { PointerEvent } from "react";
 
-const appWindow = getCurrentWindow();
+import { api } from "../api";
 
 interface DragHeaderProps {
-  onSettings: () => void;
+  onSettings?: () => void;
 }
 
-export function DragHeader({ onSettings }: DragHeaderProps) {
-  const startDragging = async (event: MouseEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    await appWindow.startDragging();
-  };
+function stopWindowDrag(event: PointerEvent<HTMLElement>) {
+  event.preventDefault();
+  event.stopPropagation();
+}
 
+export function DragHeader(_props: DragHeaderProps) {
   const minimizeWindow = async () => {
-    await appWindow.minimize();
+    try {
+      await getCurrentWindow().minimize();
+    } catch {
+      // Best effort only.
+    }
   };
 
   const closeWindow = async () => {
-    await appWindow.close();
+    try {
+      await api.exitApp();
+      return;
+    } catch {
+      // Fall back to window close if the exit command is unavailable.
+    }
+    try {
+      await getCurrentWindow().close();
+    } catch {
+      // Best effort only.
+    }
   };
 
   return (
-    <header
-      className="drag-header"
-      data-tauri-drag-region
-      onMouseDown={(event) => void startDragging(event)}
-    >
-      <button
-        type="button"
-        className="settings-btn"
-        aria-label="Open account settings"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={onSettings}
-      >
-        &#9881;
-      </button>
-      <div className="window-actions">
+    <header className="drag-header">
+      <div className="header-spacer" data-tauri-drag-region aria-hidden="true" />
+      <div className="window-actions" aria-label="Window controls">
         <button
           type="button"
           className="minimize-btn"
           aria-label="Minimize RouteLag"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={() => void minimizeWindow()}
+          onPointerDown={stopWindowDrag}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void minimizeWindow();
+          }}
         >
           &minus;
         </button>
@@ -50,8 +56,12 @@ export function DragHeader({ onSettings }: DragHeaderProps) {
           type="button"
           className="close-btn"
           aria-label="Close RouteLag"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={() => void closeWindow()}
+          onPointerDown={stopWindowDrag}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void closeWindow();
+          }}
         >
           &times;
         </button>
