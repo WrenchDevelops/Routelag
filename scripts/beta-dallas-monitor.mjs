@@ -46,7 +46,7 @@ function sanitizeBody(text) {
     .slice(0, 800);
 }
 
-async function fetchWithTimeout(url, timeoutMs) {
+async function fetchWithTimeout(url, timeoutMs, headers = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const started = Date.now();
@@ -54,7 +54,7 @@ async function fetchWithTimeout(url, timeoutMs) {
     const res = await fetch(url, {
       method: "GET",
       signal: controller.signal,
-      headers: { Accept: "application/json, text/plain, */*" },
+      headers: { Accept: "application/json, text/plain, */*", ...headers },
       redirect: "follow",
     });
     const text = await res.text();
@@ -110,7 +110,9 @@ async function probeAdminStatus(apiBase, adminToken, thresholds) {
     };
   }
   const url = `${apiBase.replace(/\/$/, "")}/api/admin/status`;
-  const res = await fetchWithTimeout(url, thresholds.timeoutMs);
+  const res = await fetchWithTimeout(url, thresholds.timeoutMs, {
+    authorization: `Bearer ${adminToken}`,
+  });
   if (res.status === 401 || res.status === 403) {
     return { checked: true, healthy: false, findings: ["admin_auth_failed"] };
   }
