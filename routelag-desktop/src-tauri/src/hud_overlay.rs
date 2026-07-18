@@ -39,7 +39,7 @@ pub fn ensure_hud_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         "hud-overlay",
         WebviewUrl::App("index.html?overlay=1".into()),
     )
-    .title("RouteLag HUD")
+    .title("Zer0 HUD")
     .decorations(false)
     .transparent(true)
     .shadow(false)

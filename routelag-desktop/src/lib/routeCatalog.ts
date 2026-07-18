@@ -2,14 +2,23 @@ import type { RouteOption } from "../App";
 import { IS_BETA_DALLAS } from "./betaMode";
 import type { RouteServer } from "./api";
 
-export const BETA_ROUTE_IDS = new Set(["dallas-beta", "johannesburg-beta"]);
+export const BETA_ROUTE_IDS = new Set([
+  "dallas-beta",
+  "ashburn-beta",
+  "virginia-beta",
+  "johannesburg-beta",
+]);
+
+export function isBetaRouteId(id: string) {
+  return BETA_ROUTE_IDS.has(id) || id.endsWith("-beta");
+}
 
 export const fallbackRouteOptions: RouteOption[] = IS_BETA_DALLAS
   ? [
       {
         id: "dallas-beta",
-        label: "Dallas Beta",
-        name: "Dallas Beta",
+        label: "Dallas",
+        name: "Dallas",
         ping: "—",
         available: false,
         meta: "United States",
@@ -22,8 +31,8 @@ export const fallbackRouteOptions: RouteOption[] = IS_BETA_DALLAS
   : [
       {
         id: "johannesburg-beta",
-        label: "Johannesburg Beta",
-        name: "Johannesburg Beta",
+        label: "Johannesburg",
+        name: "Johannesburg",
         ping: "—",
         available: false,
         meta: "South Africa",
@@ -34,8 +43,8 @@ export const fallbackRouteOptions: RouteOption[] = IS_BETA_DALLAS
       },
       {
         id: "dallas-beta",
-        label: "Dallas Beta",
-        name: "Dallas Beta",
+        label: "Dallas",
+        name: "Dallas",
         ping: "—",
         available: false,
         meta: "United States",

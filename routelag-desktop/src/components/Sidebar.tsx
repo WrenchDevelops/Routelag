@@ -1,4 +1,4 @@
-import type { PageId } from "../types";
+﻿import type { PageId } from "../types";
 
 const items: { id: PageId; label: string }[] = [
   { id: "connect", label: "Connect" },
@@ -17,7 +17,7 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
   return (
     <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-card/50 p-4">
       <div className="mb-8">
-        <p className="text-lg font-semibold text-white">RouteLag</p>
+        <p className="text-lg font-semibold text-white">Zer0</p>
         <p className="text-xs text-accent">Beta</p>
       </div>
       <nav className="flex flex-col gap-1">
@@ -36,7 +36,7 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
           </button>
         ))}
       </nav>
-      <p className="mt-auto pt-6 text-xs text-muted">RouteLag Beta</p>
+      <p className="mt-auto pt-6 text-xs text-muted">Zer0</p>
     </aside>
   );
 }

@@ -139,6 +139,7 @@ Invite-only **internal** testers only (staff / trusted), **Core Dallas routing b
 - **Required test:** Fresh install shows legal acceptance  
 - **Owner:** Product / legal  
 - **Complexity:** External dependency  
+- **Status (2026-07-17 Prompt 14):** **Partially resolved in local code** — draft legal pack in `docs/legal/` + bundled `/legal/*.md`; first-launch `BetaConsentGate`; links in Settings/Account/Help/Login/installer. Still incomplete until placeholders filled, counsel review, hosted URLs live, and packaged-build acceptance verified. See section **T**.  
 
 ### C6. No routing-server monitoring or capacity policy
 - **Severity:** High  
@@ -560,7 +561,7 @@ Do **not** treat a code change as a resolved real-world blocker.
 | C2 PathGen identity spoof / replay IDOR | Clerk JWKS verify; body identity ignored; isolation tests | Local `pathgen-server` **23/23**; migration doc | Live Railway still spoofs (see N4) | **Not resolved on live PathGen**; local code partial |
 | C3 Paid routing entitlement server-side | Entitlement token + create enforcement; concurrent caps | Local server **46/46** mock/fixture tests | Live Dallas create with free vs Pro Clerk; deploy entitlement env | **Partially resolved in repo**; live Dallas entitlement deploy **unverified** |
 | C4 Free HUD Pro-gated | UpgradeGate removed; `test:hud-access` 10/10 | Automated policy tests pass | Overwolf runtime / Fortnite GEP | **Partially resolved** (desktop policy); Overwolf **unverified** |
-| C5 Privacy / ToS | None shipped | No Privacy/ToS files found | Legal publish + first-launch accept | **Not resolved** |
+| C5 Privacy / ToS | Draft pack + first-launch gate + in-app links (Prompt 14) | `docs/legal/*`; `BetaConsentGate`; `legalConsent` tests 5/5 | Hosted URLs; placeholder fill; counsel review; packaged-build accept | **Partially resolved** (local drafts + UI; not legally complete) |
 | C6 Monitoring / capacity / kill-switch | Peer TTL, capacity, admin controls, `/healthz`, probe script | Local ops tests pass; docs in `ROUTING-TUNNEL.md` | Live Dallas missing `/healthz` (404); alert destination not wired; Ashburn still in live catalog | **Partially resolved in repo**; **live monitoring incomplete** |
 | C7 Clean-install + Fortnite E2E | Packaging/Core installer built | Installer artifact exists unsigned | Clean VM install, Dallas tunnel, Fortnite session | **Not resolved** (unverified) |
 | C8 Unsigned / no updater | Warnings + docs; updater stays disabled | Prompt 7 packaging + `WINDOWS-INSTALL.md` | Authenticode + SmartScreen | **Partially resolved** (acceptable for internal; not public) |
@@ -1231,4 +1232,565 @@ Working-tree-only (not part of monitoring commit if dirty with unrelated prior e
 
 ---
 
-*End of audit report — 2026-07-17 (sections A–M original; N Prompt 8; O Prompt 9; P Prompt 10 blocked; Q Prompt 11 partial; R Prompt 12 monitoring **partially resolved**)*
+## S. Prompt 13 — Elevated clean-Windows routing + Fortnite matrix (2026-07-17 / 2026-07-18)
+
+**Evidence classes used:** Local code (artifact inventory only) · Live beta deployment (Dallas health read-only) · Mock testing (none this session) · Real external verification (**blocked** — matrix not executed)
+
+**Verdict upfront:** **Blocked** before install / tunnel / Fortnite. No Windows networking mutation, no installer run, no Dallas peer create, no Fortnite launch through Zer0 in this pass.
+
+### S1. Safety gate (stop conditions evaluated first)
+
+| Safety requirement | Observed on `DESKTOP-VKFPGSR` | Gate |
+|--------------------|-------------------------------|------|
+| Elevated clean Windows VM **or** dedicated beta-test machine | Bare-metal Windows **11 Home** (`Manufacturer=System manufacturer`, `Model=System Product Name`, `HypervisorPresent=False`); **not** a clean VM; looks like a daily-use host | **FAIL** |
+| Session elevated (Administrator) | `net session` / principal check → **not elevated** | **FAIL** |
+| VM snapshot or restore point | Restore-point query unavailable without elevation; no Hyper-V VM inventory available | **FAIL / unverified** |
+| No irreplaceable network configuration | Active Ethernet only; gateway `172.16.0.1`; DNS `1.1.1.1`/`1.0.0.1`; public IP `209.50.154.xxx` (last octet redacted) | Caution — home/lab LAN |
+| Restore Internet instructions outside VM | Doc present in repo: `routelag-desktop/docs/EMERGENCY-CLEANUP.md` | Pass (doc only) |
+| Dallas emergency controls accessible | Live Dallas still pre–Prompt 10 (`/healthz` **404**; `/health` still lists node endpoints); admin/expire-peers surface **not** confirmed live | **FAIL for trusted emergency ops** |
+| HUD + Replay disabled | Required for Core channel; audited Core installer **missing** so packaged flags not re-verified this session | Incomplete |
+| Ashburn disabled | Live health still lists `ashburn-beta` **online** | **FAIL** (ops config) |
+| Unrelated VPN present and must remain untouched | `WireGuardManager` service **Running** (Automatic) — unrelated to Zer0 tunnel naming | Risk amplifier — matrix must not touch it; reinforces clean-VM preference |
+| Fresh / clean install baseline | Existing **RouteLag Beta** + **Zer0 Beta** ARP both point at `C:\Program Files\RouteLag` with `RouteLag.exe` only (no `Zer0.exe`); `%LOCALAPPDATA%\RouteLag` present; `%LOCALAPPDATA%\Zer0` missing | **FAIL** for “fresh install” without dedicated clean snapshot |
+| Audited Core installer present with matching SHA256 | Expected `routelag-desktop/dist/installers/Zer0-Beta-Core-Setup.exe` SHA256 `A273C1D2…F300D4` → **MISSING** (output dir absent) | **FAIL** |
+
+**Stop decision:** Per Prompt 13 safety rules (“do not run on important daily-use machine unless explicitly approved” + required elevated clean VM/dedicated machine + snapshot + Restore Internet outside VM + Dallas emergency controls), the matrix was **not started**. Asking to “run Prompt 13” on this workspace host is **not** treated as explicit approval to mutate this daily-use machine’s networking while the other gates also fail.
+
+### S2. Test artifact inventory (no silent hash substitution)
+
+| Item | Expected (Prompt 7 / N10) | Found this session | Match? |
+|------|---------------------------|--------------------|--------|
+| Git commit (repo HEAD) | Prompt 7 era artifact | `9d3075667edffdd62f4dc0e8e6af4cba431bb9b9` (“Document Prompt 12…”) | N/A for missing installer |
+| Installer path | `…/routelag-desktop/dist/installers/Zer0-Beta-Core-Setup.exe` | **Missing** (`dist/installers` does not exist) | **No** |
+| Installer SHA256 | `A273C1D270602D10C4CC764B319516DAD3CB34D4D20F32575712125216F300D4` | Not computable (file absent) | **No** |
+| Desktop release exe (build tree) | `AFCA9E2E98316CB6AEA789985A4A4939C3DF11FB5FA98F2A93D7B872D5B8C7B1` | `routelag-desktop\src-tauri\target\release\routelag-desktop.exe` = **same SHA256** | **Yes** (local build tree only) |
+| Installed desktop exe | Audited Core payload | `C:\Program Files\RouteLag\RouteLag.exe` = `958862B0…E137B9` | **Different** — not the audited payload |
+| Routing engine (build tree + installed) | Record SHA256 | `RouteLagEngine.exe` = `34947BF9C4AFE05C5223EBF151458E7DD3BF0FA05144413A1E0143B056109C51` | Recorded |
+| Packager shell (`routelag-setup.exe`) | Not the audited Core distributor | `routelag-installer\…\routelag-setup.exe` SHA256 `B7BA3DAB…8552D0` | Different artifact class — **not used** |
+| Legacy Downloads installers | — | `RouteLag Beta v0.1.2/0.1.4 x64 Setup.exe` present under Downloads | **Not** Core Zer0 audited artifact |
+| Server version (Dallas live) | Confirm after Prompt 10 | `/health` → `ok=true`, `peerMode=wg`; **no** `version`/`git` fields; `/healthz` **404** | Pre–Prompt 10 surface |
+| Dallas configuration version | Cap 4, Ashburn disabled, entitlement on | Live nodes: `dallas-beta` + `ashburn-beta` both online | **Not** beta-hardened config |
+
+**Policy followed:** Did **not** silently substitute `routelag-setup.exe`, NSIS legacy setups, or the older installed `RouteLag.exe` for the audited `Zer0-Beta-Core-Setup.exe`.
+
+### S3. Baseline capture (read-only; before any install — install never started)
+
+| Field | Value (redacted where needed) |
+|-------|-------------------------------|
+| Windows | Windows 11 Home · build/kernel reported as NT 10.0.26200 |
+| Administrator status | **No** (agent shell not elevated) |
+| Active adapters | Ethernet **Up** — Intel I211 Gigabit (`04-D9-F5-1F-0B-CB`) |
+| DNS | Ethernet → `1.1.1.1`, `1.0.0.1` |
+| Route table | Default via `172.16.0.1` on `172.16.0.26`; no persistent routes; no Zer0/WG tunnel routes observed |
+| Existing VPN software | `WireGuardManager` Running/Automatic; SSTP service present |
+| Existing WireGuard tunnel services | **None** matching `WireGuardTunnel$` / routelag / zer0 names |
+| Firewall profiles | Domain/Private/Public all Enabled |
+| Link state | Ethernet up; no Wi-Fi adapter observed this session |
+| Public IP | `209.50.154.xxx` (octet redacted) |
+| Basic connectivity | TCP 8.8.8.8:53 success; ICMP to 1.1.1.1 success |
+| Fortnite | Installed `++Fortnite+Release-41.20-CL-55550516-Windows` at `C:\Program Files\Epic Games\Fortnite` |
+| Epic Games Launcher | `20.1.4-0+UE5` |
+| Anti-cheat services | `EasyAntiCheat_EOS` present, **Stopped** (idle); Epic Online Services stopped |
+| Private credentials | **Not** collected / **not** written |
+
+### S4. Matrix execution status
+
+All scenarios below are **Not executed** because the safety gate failed. No local network restoration claim is asserted beyond “baseline left unchanged.”
+
+| Scenario | Result | Local network restored | Server peer removed | Evidence |
+|----------|--------|------------------------|---------------------|----------|
+| Fresh Zer0 installation | **Not executed** | N/A (no install) | N/A | Audited installer missing; host not clean/elevated |
+| Launch without Node/Rust/Vite | **Not executed** | N/A | N/A | — |
+| Shortcut / ARP / AppData / migration / unsigned warning / admin explain / Restore Internet UX | **Not executed** | N/A | N/A | Pre-existing dual ARP RouteLag+Zer0 → same `RouteLag` path observed only as baseline dirt |
+| Auth matrix (invalid invite / free Clerk / approved / forged entitlement / concurrent / logged-out) | **Not executed** | N/A | N/A | Would also need live Dallas entitlement (Prompt 10 still blocked) for forged/free gates |
+| Real Dallas routing | **Not executed** | N/A | N/A | No `POST /api/routes/create`; no WG peer intentionally created |
+| Fortnite through tunnel | **Not executed** | N/A | N/A | Fortnite present but not launched for Zer0 E2E |
+| Normal disconnect | **Not executed** | — | — | — |
+| Normal close while connected | **Not executed** | — | — | — |
+| Force-kill recovery | **Not executed** | — | — | — |
+| Reboot recovery | **Not executed** | — | — | — |
+| Ethernet/Wi-Fi change | **Not executed** | — | — | No Wi-Fi adapter on this host |
+| Sleep/wake | **Not executed** | — | — | — |
+| API unavailable / entitlement unavailable / maintenance / node disabled / session expired / app blocked / capacity full / auth expires | **Not executed** | — | — | Failure UX not exercised on packaged app |
+| Uninstall (preserve data / full wipe) | **Not executed** | — | — | Would risk daily-use install + unrelated `WireGuardManager` |
+
+### S5. Live probes performed (read-only only)
+
+| Probe | Class | Result |
+|-------|-------|--------|
+| Dallas `GET /health` | Live beta (read-only) | **200** `ok=true` `peerMode=wg`; nodes `dallas-beta`,`ashburn-beta` online; still endpoint-leaky pre–Prompt 10 shape |
+| Dallas `GET /healthz` | Live beta | **404** |
+| Local route/DNS/service inventory | Local baseline | No Zer0-owned tunnel service; DNS/routes healthy |
+| Artifact hunt + SHA256 of build-tree desktop/engine | Local code | Desktop release hash matches Prompt 7 record; Core Setup artifact absent |
+| Fortnite / Epic / EAC presence | Local baseline | Present; EAC idle |
+
+**Not performed:** install, elevate, route create, peer inspect, Fortnite session, disconnect/close/kill/reboot/network-change/uninstall, any billing charge, any DNS change, any Overwolf publish.
+
+### S6. Completion gate (Prompt 13)
+
+| Gate | Met? |
+|------|------|
+| Normal disconnect passes | **No** — not run |
+| Normal close passes | **No** — not run |
+| Force-kill recovery passes | **No** — not run |
+| Reboot recovery passes | **No** — not run |
+| Uninstall passes | **No** — not run |
+| Unrelated VPN untouched (under test) | **N/A** — matrix not run; baseline `WireGuardManager` left alone |
+| Real Dallas route create/end passes | **No** — not run |
+| Fortnite launches without Zer0-related anti-cheat error | **No** — not run |
+| Mark C1 / C7 tunnel + clean-install blockers resolved | **No** |
+
+### S7. Small Deployment Audit
+
+| Field | Value |
+|-------|-------|
+| **Original blocker** | C7 Clean-install + Fortnite E2E unverified; C1 tunnel lifecycle unproven on real Windows (also N8 “Tunnel cleanup unproven” / “Clean install / Fortnite E2E”). |
+| **Exact files or services changed** | **None.** Audit doc only (`docs/ZER0_FULL_PRODUCT_LAUNCH_AUDIT_2026-07-17.md` section S). No installer, desktop binary, Dallas VPS, DNS, or service mutation. |
+| **Configuration changed** | None |
+| **Deployment target** | None (matrix blocked pre-deploy / pre-install). Intended future target: elevated **clean Windows VM or dedicated beta machine** + audited Core installer + live Dallas (preferably post–Prompt 10) with Ashburn disabled. |
+| **Tests run** | Read-only baseline inventory + Dallas health/healthz probes + artifact/hash verification. **Zero** packaged install / routing / Fortnite matrix cases. |
+| **Live probes performed** | Dallas `/health` 200; `/healthz` 404; local adapter/DNS/route/service/Fortnite presence checks. |
+| **Results** | Safety gate **failed**. Audited `Zer0-Beta-Core-Setup.exe` **missing**. Host not elevated, not a clean VM, dirty prior RouteLag/Zer0 ARP install, unrelated `WireGuardManager` running, Ashburn still offered live. Matrix **not executed**. |
+| **Rollback procedure** | N/A — no changes applied. If a future run leaves the machine broken: follow `routelag-desktop/docs/EMERGENCY-CLEANUP.md` Restore Internet; Dallas admin expire-peers / maintenance **after** Prompt 10 surfaces are live; restore VM snapshot. |
+| **Remaining risks** | Largest private-beta risk unchanged: crash/close/reboot/uninstall behavior of the Windows tunnel is still **unproven**. Using this daily-use host would risk the running unrelated WireGuard manager and the user’s LAN. Missing Core installer means any ad-hoc rebuild would need a **new** audited SHA256 before claims can attach to Prompt 7. Live Dallas entitlement + Ashburn disable still pending Prompt 10. |
+| **Blocker status** | **Blocked** |
+| **Safe for** | **Internal testing** only (code/automated prior evidence). **Not** safe to claim trusted private beta or public beta on the basis of this prompt. |
+| **Exact next step** | (1) Provision or designate an **elevated clean Windows VM / dedicated beta PC** with a snapshot + Restore Internet printed/offline copy. (2) Rebuild or restore `Zer0-Beta-Core-Setup.exe`, record new SHA256 if rebuild, or recover the Prompt 7 artifact hash `A273C1D2…F300D4`. (3) Prefer finishing **Prompt 10** (Dallas hardened deploy, Ashburn disabled, entitlement live, emergency controls) before or in parallel with the matrix. (4) Explicitly approve running the matrix on that dedicated host. (5) Re-run Prompt 13 end-to-end and only then reconsider C1/C7. |
+
+---
+
+## T. Prompt 14 — Zer0 Beta Privacy, Terms, Consent, and Tester Agreement (2026-07-17)
+
+### T1. Scope and classes of work
+
+| Class | This prompt |
+|-------|-------------|
+| Local code | **Yes** — legal drafts, consent gate, links, installer acknowledgement, unit tests |
+| Staging deployment | **No** |
+| Live beta deployment | **No** |
+| Mock testing | **Yes** — `legalConsent` storage unit tests |
+| Real external verification | **No** — hosted `/legal/*` URLs not published; packaged-build UI not executed |
+
+**Not claimed:** legal compliance, GDPR/CCPA/COPPA certification, or that documents are ready for public beta.
+
+### T2. Draft documents added
+
+| Document | Path |
+|----------|------|
+| Pack index | `docs/legal/README.md` |
+| Placeholders | `docs/legal/PLACEHOLDERS.md` |
+| Privacy Policy | `docs/legal/PRIVACY_POLICY.md` |
+| Terms of Service | `docs/legal/TERMS_OF_SERVICE.md` |
+| Acceptable Use Policy | `docs/legal/ACCEPTABLE_USE_POLICY.md` |
+| Private Beta Tester Agreement | `docs/legal/PRIVATE_BETA_TESTER_AGREEMENT.md` |
+| Routing & Network Risk Disclosure | `docs/legal/ROUTING_AND_NETWORK_RISK_DISCLOSURE.md` |
+| Diagnostic & Telemetry Disclosure | `docs/legal/DIAGNOSTIC_AND_TELEMETRY_DISCLOSURE.md` |
+| Fortnite / third-party disclaimer | `docs/legal/FORTNITE_AND_THIRD_PARTY_DISCLAIMER.md` |
+| Data inventory (code-backed) | `docs/legal/DATA_INVENTORY.md` |
+| Professional legal-review checklist | `docs/legal/LEGAL_REVIEW_CHECKLIST.md` |
+| Bundled in-app copies | `routelag-desktop/public/legal/*.md` |
+
+**Document version:** `2026-07-17.1`
+
+### T3. Placeholder list requiring owner input
+
+All `{{…}}` fields listed in `docs/legal/PLACEHOLDERS.md`, including: legal company name, company address, support email, privacy contact, governing jurisdiction, effective date, minimum age, all retention durations, refund policy, arbitration/dispute terms, beta confidentiality period. **No invented legal identities or addresses.**
+
+### T4. Data inventory summary
+
+Full table: `docs/legal/DATA_INVENTORY.md`. Confirmed collected (not exhaustive): Clerk IDs/email, device ID, route sessions, selected node, tunnel IP, connection times, latency/loss measurements, local logs/crash logs, optional public IP in diagnostics, Clerk billing snapshots, localhost HUD telemetry, replay pipeline when enabled (disabled in Core installer builds). Support communications are user-mediated/external.
+
+### T5. Application screens / files changed
+
+| Surface | File(s) | Change |
+|---------|---------|--------|
+| First-launch gate | `BetaConsentGate.tsx`, `App.tsx` | Blocks Login/app until all acknowledgements + save |
+| Consent storage | `lib/legalConsent.ts` | Version, timestamp, optional Clerk user id, app version, ack IDs |
+| Doc viewer | `LegalDocModal.tsx`, `LegalLinks.tsx` | In-app draft viewer (no paid gate) |
+| Support URLs | `lib/supportUrls.ts` | Hosted `/legal/*` URL constants |
+| Settings → About | `SettingsPage.tsx` | Legal pack version + links |
+| Account | `AccountPage.tsx` | Legal links (free to view) |
+| Help Center | `HelpCenterPage.tsx` | Legal & disclosures section |
+| Login | `LoginPage.tsx` | Compact legal links |
+| Styles | `design-system.css` | Consent + modal + link styles |
+| Installer welcome | `routelag-installer/.../WelcomePage.tsx`, `App.tsx`, `styles.css` | Links + required acknowledgement checkbox |
+| Legacy NSIS footer | `routelag-desktop/installer/routelag-installer.nsi` | Privacy/Terms mention |
+| Tests | `legalConsent.test.ts`, `package.json` | 5 unit tests wired into `npm test` |
+
+### T6. Required acknowledgements (first launch)
+
+Private-beta status; unsigned-build warning; network-routing risk; no guaranteed ping reduction; Restore Internet procedure; diagnostic collection; Privacy Policy; Terms; Beta Tester Agreement. Documents also cover AUP, HUD separate/free/optional, replay described-but-disabled-in-Core, Epic/ExitLag non-affiliation, no traffic-content sale, not Tebex.
+
+### T7. Minor-user / privacy-law flags (not independently resolved)
+
+Flagged in `LEGAL_REVIEW_CHECKLIST.md`: minimum age, parental consent, payment by minors, replay data from minors, IP/device data, US state privacy laws, GDPR/UK GDPR if international testers participate.
+
+### T8. Tests run
+
+| Test | Result |
+|------|--------|
+| `npm run test:legal-consent` | **5/5 pass** |
+| `npm test` (desktop: hud-access + heartbeat + legal-consent) | **Pass** |
+| `npx tsc --noEmit` (desktop) | **Pass** |
+| Packaged-build first-launch UI | **Not run** |
+| Hosted URL HTTP probes | **Not run** (URLs not published) |
+
+### T9. UI verification
+
+| Check | Result |
+|-------|--------|
+| Code paths for gate before Login/authenticated UI | Present (`canUseApp = legalAccepted && authenticated`) |
+| In-app docs load from `/legal/*.md` | Bundled under `public/legal/` |
+| Screenshots from packaged EXE | **Not available** this pass |
+
+### T10. Completion gate (Prompt 14)
+
+| Gate | Met? |
+|------|------|
+| All placeholders filled | **No** |
+| Qualified owner/lawyer review | **No** |
+| Hosted document URLs exist | **No** |
+| First-launch acceptance verified in packaged build | **No** |
+
+→ Blocker remains **partially resolved**.
+
+### T11. Small Deployment Audit
+
+| Field | Value |
+|-------|-------|
+| **Original blocker** | C5 — No Privacy Policy / Terms of Service (also private-beta legal/consent gate). |
+| **Exact files or services changed** | See T2–T5. **No** Dallas/PathGen/Railway/DNS/service deploys. **No** Overwolf publish. **No** billing charges. |
+| **Configuration changed** | None on servers. LocalStorage key `zer0.legalConsent.v1` used by desktop after acceptance. |
+| **Deployment target** | **Local code only** (not staging, not live beta). |
+| **Tests run** | `legalConsent` 5/5; full desktop `npm test`; desktop `tsc --noEmit`. |
+| **Live probes performed** | None (no hosting yet). |
+| **Results** | Draft legal pack + first-launch consent + multi-surface links implemented in repo. Placeholders remain. Hosted URLs absent. Packaged acceptance unverified. |
+| **Rollback procedure** | Revert Prompt 14 desktop/installer/docs commits; clear `localStorage` key `zer0.legalConsent.v1` on tester machines if needed. No server rollback required. |
+| **Remaining risks** | Documents are drafts with empty legal identity fields; counsel not engaged; minors/international privacy unresolved; hosted 404s if users click “(web)” before publish; acceptance not proven in unsigned Core installer yet. |
+| **Blocker status** | **Partially resolved** |
+| **Safe for** | **Internal testing** of the consent UX and draft text. **Not** safe to treat as counsel-approved for trusted private beta distribution beyond tightly controlled testers who already accept unsigned software risk. **Not** public beta. |
+| **Exact next step** | (1) Owner fills `docs/legal/PLACEHOLDERS.md`. (2) Qualified lawyer reviews pack + inventory. (3) Publish HTML mirrors to support domain `/legal/*`. (4) Rebuild packaged Core installer and verify first-launch gate + document viewer. (5) Only then reconsider C5 toward resolved for trusted private beta. |
+
+---
+
+*End of audit report — 2026-07-17 (sections A–M original; N Prompt 8; O Prompt 9; P Prompt 10 blocked; Q Prompt 11 partial; R Prompt 12 monitoring **partially resolved**; S Prompt 13 Windows/Fortnite matrix **blocked**; T Prompt 14 legal/consent **partially resolved**). Section U (Prompt 15) appended below.*
+
+---
+
+## U. Prompt 15 — Final Trusted Private-Beta Gate Re-Audit (2026-07-17 / 2026-07-18)
+
+**Evidence classes used:** Local code · Mock testing (full automated reruns) · Live beta deployment probes (PathGen Railway + Dallas public API + GHA monitor history) · Real external verification (PathGen spoof/exchange; Dallas health; monitoring destination) · Staging deployment: **not used** · No new deploys · No live billing charges · No Overwolf publish · No production DNS changes
+
+**Required beta configuration (target):** Windows only · ≤5 invited testers · ≤4 concurrent routing sessions · Dallas only · Ashburn disabled · HUD optional/free · Replay disabled unless PathGen live auth passed (it passed — still keep Replay off for Core) · No live public checkout · No guaranteed lower-ping claim · Unsigned installer warning · Manual updates · Real monitoring alert destination active
+
+### U1. Prompt 9–14 reconciliation
+
+| Prompt | Blocker | Prior status | Re-audit status | Required proof this session |
+|--------|---------|--------------|-----------------|------------------------------|
+| 9 | PathGen spoof / isolation | **Resolved** live | **Still Resolved** | Spoof `clerkUserId` / email → **401**; valid Clerk exchange → **200** (token redacted); health minimal `0.1.0+6947ebc` |
+| 10 | Dallas hardened deploy | **Blocked** (no SSH) | **Still Blocked** | `/healthz` still **404**; `/health` still endpoint-leaky + lists Ashburn; entitlement/cap/emergency surfaces not live |
+| 11 | Desktop heartbeats | **Partially resolved** (local) | **Partially resolved** | Local heartbeat suite **17/17**; live authenticated cadence / peer TTL **not** proven (needs Prompt 10 + tester session) |
+| 12 | Monitoring alerts | **Partially resolved** | **Partially resolved** (API monitor still active) | Healthy local probe **200** `/health` ~101 ms `dallas-beta`; prior GHA alert+recovery issues #1/#3 remain proven; admin metrics still skipped (no `DALLAS_ADMIN_TOKEN`) |
+| 13 | Clean Windows + Fortnite matrix | **Blocked** | **Still Blocked** | Audited Core installer **missing**; no elevated clean VM; no tunnel/Fortnite/uninstall run |
+| 14 | Legal / consent | **Partially resolved** | **Partially resolved** | Local consent tests **5/5**; placeholders unfilled; hosted URLs absent; packaged first-launch **not** verified |
+
+### U2. Automated suite reruns (exact commands + results)
+
+| Suite | Command | Result | Class |
+|-------|---------|--------|-------|
+| Server | `npm test` in `server/` | **46/46 pass** | Local + mock |
+| Server build | `npm run build` in `server/` | **pass** | Local |
+| Server audit | `npm audit --omit=dev` in `server/` | **0 vulnerabilities** | Local |
+| PathGen | `npm test` in `pathgen-server/` | **24/24 pass** | Local + mock JWKS |
+| PathGen build | `npm run build` in `pathgen-server/` | **pass** | Local |
+| PathGen audit | `npm audit --omit=dev` in `pathgen-server/` | **0 vulnerabilities** | Local |
+| Desktop unit | `npm test` in `routelag-desktop/` (`hud-access` + `heartbeat` + `legal-consent`) | **10 + 17 + 5 = 32/32 pass** | Local |
+| Desktop typecheck | `npx tsc --noEmit` in `routelag-desktop/` | **pass** | Local |
+| Desktop production build | `npm run build` in `routelag-desktop/` | **pass** (vite client build) | Local |
+| Desktop audit | `npm audit --omit=dev` in `routelag-desktop/` | **12 moderate** (transitive via `@clerk/ui` / Solana wallet adapters) | Local — not treated as unauthorized-access gate |
+| Desktop Rust | `cargo test --lib` + `cargo check` in `routelag-desktop/src-tauri/` | **17/17 pass**; check **pass** | Local |
+| Installer Rust | `cargo test --lib` in `routelag-installer/src-tauri/` | **5/5 pass** | Local |
+| Installer typecheck/build | `npx tsc --noEmit`; `npm run build` in `routelag-installer/` | **pass** | Local |
+| Installer audit | `npm audit --omit=dev` in `routelag-installer/` | **0 vulnerabilities** | Local |
+| HUD policy | covered by `npm run test:hud-access` | **10/10 pass** | Local |
+| Artifact secret scan | Scan `routelag-desktop/dist` + `routelag-installer/dist` for `sk_*`, PEM keys, JWTs, service_role | **No secret-key hits**; `pk_test_`/`pk_live_` publishable keys in desktop JS only (expected); `sk_hits=0` | Local build artifact |
+
+**Not re-run this session (by design / prior blocker):** full `tauri build` / Core installer rebuild; packaged install matrix; live billing checkout.
+
+### U3. Live probes (this session)
+
+| Probe | Expected for trusted beta | Actual | Status |
+|-------|---------------------------|--------|--------|
+| PathGen spoof `clerkUserId` | 401 | **401** | [x] Verified live |
+| PathGen spoof email | 401 | **401** | [x] Verified live |
+| PathGen valid Clerk exchange | 200 + PathGen token | **200** (`testerId` minted; token **redacted**) | [x] Verified live |
+| PathGen `/health` | Minimal, no secrets | `{"ok":true,"service":"pathgen","version":"0.1.0+6947ebc"}` | [x] Verified live |
+| Dallas `/healthz` | 200 | **404** | [!] Failed (Prompt 10 undeployed) |
+| Dallas `/health` redacted | No endpoints/keys | **200** but still lists `endpoint`/`publicIp`/`tunnelCidr` for Dallas **and Ashburn** | [!] Failed |
+| Dallas unauthorized `POST /api/routes/create` | 401 | **401** | [x] Verified live (invite auth only — **not** entitlement proof) |
+| Dallas free-user route create | Reject | **Not executed** — needs live entitlement deploy + free Clerk user | [ ] Not tested |
+| Dallas authorized tester route create | Succeed | **Not executed** — Prompt 10 + tester session required | [ ] Not tested |
+| Heartbeat authenticated cadence | last-seen updates | Unauth heartbeat → **401**; authenticated cadence **not** run | [ ] Not tested live / [~] local suite only |
+| Route end | Works when authorized | Unauth end → **401**; authorized end **not** run | [ ] Not tested live |
+| Maintenance / node disable | Admin works | `POST /api/admin/maintenance` → **404**; `/api/admin/controls` → **404** | [!] Failed live |
+| Monitoring healthy probe | Alert destination path alive | Local `beta-dallas-monitor.mjs` → **ok**, `dallas-beta`, latency **101 ms**; GHA history success + closed alert issues | [x] Verified live (API path; admin metrics skipped) |
+| Capacity 5th session reject | Reject | **Not tested** live (cap not deployed) | [ ] Not tested |
+| Peer expiration | Abandoned peer removed | **Not tested** live | [ ] Not tested |
+| Clean install / tunnel / Fortnite / uninstall | Pass matrix | **Blocked** (Prompt 13) | [ ] Not tested |
+
+Tokens/secrets: Clerk session JWT and PathGen token lengths recorded only; values never written. Session revoked after exchange.
+
+### U4. Blocker proof checklist (Prompt 15 required matrix)
+
+| Blocker | Required proof | Result mark |
+|---------|----------------|-------------|
+| PathGen spoof | Live spoof returns 401 | [x] Verified live |
+| Replay isolation | Cross-user read/delete fails | [x] Verified live (Prompt 9; local suite still 24/24). Replay remains **disabled** in Core packaging flags |
+| Dallas hardened server | `/healthz` works and `/health` is redacted | [!] Failed |
+| Paid routing entitlement | Free user rejected live | [ ] Not tested (live Dallas pre-entitlement) |
+| Internal tester routing | Authorized user succeeds live | [ ] Not tested |
+| Ashburn | Not offered | [!] Failed — `ashburn-beta` still `online` on live `/health` |
+| Capacity | Fifth concurrent session rejected | [ ] Not tested |
+| Heartbeat | Real Dallas last-seen updates | [ ] Not tested |
+| Peer expiration | Abandoned peer removed | [ ] Not tested |
+| Emergency controls | Maintenance/node disable tested | [!] Failed live (404) / [~] local ops tests only |
+| Monitoring | Real alert and recovery received | [x] Verified live (Prompt 12 GHA #3 + recovery; healthy probe reconfirmed) |
+| Clean install | Packaged installer tested | [ ] Not tested — Core installer artifact **missing** |
+| Tunnel cleanup | Normal close, force-kill, reboot verified | [ ] Not tested |
+| Fortnite | Real session starts without Zer0-related AC failure | [ ] Not tested |
+| Uninstall | No Zer0-owned network leftovers | [ ] Not tested |
+| Legal | Consent visible and accepted | [~] Verified locally only (code + unit tests; packaged UI / hosted docs not proven) |
+
+### U5. Beta artifact record
+
+| Artifact | Value | Proven this session? |
+|----------|-------|----------------------|
+| Git commit (repo HEAD) | `9d3075667edffdd62f4dc0e8e6af4cba431bb9b9` | Yes (working tree has large uncommitted Prompt 10–14 local changes) |
+| Installer SHA256 | Prompt 7: `A273C1D270602D10C4CC764B319516DAD3CB34D4D20F32575712125216F300D4` | **No** — `Zer0-Beta-Core-Setup.exe` **absent** |
+| Desktop executable SHA256 | `AFCA9E2E98316CB6AEA789985A4A4939C3DF11FB5FA98F2A93D7B872D5B8C7B1` (`routelag-desktop.exe` release tree) | Yes (local build tree only) |
+| Server version (Dallas live) | Pre–Prompt 10 surface; no `version`/`git` field; `/healthz` 404 | Yes |
+| PathGen version | `0.1.0+6947ebc` | Yes |
+| Configuration version | Target: cap 4, Ashburn off, entitlement on — **not** live | Live config ≠ required beta config |
+| Enabled feature flags (Core packaging intent) | `VITE_ROUTELAG_ENABLE_HUD=false`, `VITE_ROUTELAG_ENABLE_REPLAY=false` in `build-installer.ps1` Core/BetaDallas | Local packaging script only; packaged binary missing |
+| Enabled node IDs (live) | `dallas-beta`, `ashburn-beta` | Live |
+| Tester allowlist count | Not confirmed on live Dallas | Unknown |
+| Concurrent-session cap | Target **4**; live not confirmed | Unknown / not enforced on live |
+
+### U6. Trusted-private-beta minimum gate
+
+| Minimum item | Verified? |
+|--------------|-----------|
+| Live PathGen cannot spoof identity, **or** Replay completely disabled | **Yes** — both (spoof closed **and** Core Replay flag off) |
+| Live Dallas enforces entitlement | **No** |
+| Ashburn is disabled | **No** |
+| Real Dallas route create and end work | **No** |
+| Real Windows network cleanup passes | **No** |
+| Force-kill recovery passes | **No** |
+| Reboot recovery passes | **No** |
+| Fortnite launches successfully | **No** |
+| Uninstall leaves no Zer0 network resources | **No** |
+| Monitoring alert reaches a real owner | **Yes** (WrenchDevelops via GitHub Issues) |
+| Emergency maintenance control works | **No** on live |
+| Beta capacity capped at four | **No** on live |
+| Legal disclosures and tester consent are present | **Partial** (drafts + gate in code; not counsel/hosted/packaged-complete) |
+| Rollback steps are documented | **Yes** (prior prompt sections + runbooks) |
+| No known critical/high unauthorized-access issue remains | **No** — live Dallas still invite-JWT create without entitlement; `/health` still leaky |
+
+**Gate result:** **FAIL** — do **not** recommend tightly controlled trusted private beta.
+
+### U7. Final verdict (choose exactly one)
+
+**Ready for internal testing only**
+
+Not ready for: tightly controlled trusted private beta · broader private beta · public beta · production.
+
+Rationale: PathGen auth and API monitoring are live-proven, and local suites are green, but **Prompt 10 (Dallas harden/entitlement/Ashburn/capacity/emergency)** and **Prompt 13 (Windows tunnel/Fortnite/uninstall)** remain failed safety gates. A high local-test pass rate does not override those gates.
+
+### U8. Exact features enabled / disabled / instructions / rollback / risks
+
+**Exact features enabled (recommended internal scope):**
+- Windows desktop routing client (unsigned) against live Dallas API (invite path as today)
+- Dallas node selection only (operators must instruct testers not to use Ashburn even though it still appears live)
+- Clerk sign-in
+- Restore Internet / emergency cleanup docs
+- External Dallas API up/latency monitoring → GitHub Issues → WrenchDevelops
+- Draft in-app legal consent gate (local code)
+
+**Exact features disabled / must stay off:**
+- Replay / PathGen UI in Core installer flags (`ENABLE_REPLAY=false`) even though PathGen auth is fixed
+- HUD in Core installer flags (`ENABLE_HUD=false`); when enabled later, keep free (policy tests pass)
+- Ashburn for testers (ops: disable on server — **not yet live**)
+- Live public checkout / paid marketing claims / guaranteed lower ping
+- Auto-updater
+- Overwolf store publish
+- Broader than internal/staff testers
+
+**Exact tester instructions (internal only):**
+1. Use Windows only; accept unsigned SmartScreen warning.
+2. Accept first-launch legal acknowledgements when present.
+3. Prefer Dallas; do not start Ashburn sessions.
+4. Cap informal concurrency: never exceed four simultaneous Optimize sessions across the team.
+5. Before every session: know Restore Internet; keep `EMERGENCY-CLEANUP.md` offline.
+6. After every session: Disconnect; if anything feels wrong, Restore Internet before reboot.
+7. Report tunnel leftovers immediately; do not troubleshoot by reinstalling mid-session.
+8. No public redistribution of the installer; manual update only when ops ships a new hashed build.
+
+**Exact rollback triggers:**
+- Any unauthorized PathGen access or Dallas entitlement bypass discovered live
+- Tunnel leftovers after close/kill/reboot that Restore Internet cannot clear
+- Fortnite / anti-cheat incident attributed to Zer0
+- Dallas API outage alert that does not recover
+- Ashburn accidentally used and mis-provisioned
+- Need to stop routing: put Dallas into maintenance **after** Prompt 10 surfaces exist; until then use VPS process stop / invite rotation / stop distributing builds
+
+**Exact remaining risks:**
+1. Crash/exit/reboot tunnel teardown still **unproven** on real Windows (Critical).
+2. Live Dallas lacks hardened `/healthz`, redacted `/health`, entitlement, Ashburn disable, cap-4, emergency admin APIs.
+3. Audited Core installer artifact missing — no current distributable SHA to attach claims to.
+4. Legal pack still draft/placeholder; not counsel-approved; hosted URLs missing.
+5. Desktop npm audit: 12 moderate transitive issues via Clerk UI stack.
+6. `CLERK_SECRET_KEY` still present in desktop `.env.local` (not bundled; rotate/remove for hygiene).
+
+### U9. Small Deployment Audit
+
+| Field | Detail |
+|-------|--------|
+| **Original blocker** | Final trusted private-beta gate re-audit after Prompts 9–14 — determine whether a ≤5-person Windows/Dallas beta is safe. |
+| **Exact files or services changed** | **Documentation only:** `docs/ZER0_FULL_PRODUCT_LAUNCH_AUDIT_2026-07-17.md` (this section U). Temporary local Clerk exchange helper scripts created then **deleted**. Brief `@clerk/backend` install under `pathgen-server/node_modules` for the live exchange probe (not a product deploy). **No** Dallas/PathGen/Railway/DNS/desktop/installer production deploys. |
+| **Configuration changed** | None on live services. |
+| **Deployment target** | None (re-audit only). Live probes hit PathGen Railway production + Dallas `216.152.154.137:3001` + local monitor script / prior GHA evidence. |
+| **Tests run** | Server 46/46; PathGen 24/24; Desktop 32/32 + tsc + vite build; Desktop Rust 17/17; Installer Rust 5/5; Installer tsc+vite build; dependency audits; artifact secret scan. |
+| **Live probes performed** | PathGen spoof×2 401; PathGen Clerk exchange 200 (redacted); PathGen health; Dallas `/healthz` 404; Dallas `/health` leaky+Ashburn; unauthorized create/end/heartbeat 401; admin/maintenance 404; monitor healthy probe. |
+| **Results** | Local suites green. PathGen auth gate still holds. Monitoring API path still holds. **Trusted-private-beta minimum gate fails** on Dallas harden + Windows/Fortnite matrix + live entitlement/Ashburn/capacity/emergency. |
+| **Rollback procedure** | N/A for this prompt (no deploy). Continue prior rollbacks: PathGen prefer disable Replay over auth rollback; monitoring disable GHA workflow; Dallas unchanged. |
+| **Remaining risks** | See U8. Critical tunnel/E2E and live Dallas entitlement/Ashburn remain. |
+| **Blocker status** | **Failed** (trusted private-beta gate). Overall product readiness remains **Ready for internal testing only**. |
+| **Safe for** | **Internal testing** (staff / highly trusted, Restore Internet trained). **Not** trusted private beta. **Not** public beta. |
+| **Exact next step** | (1) Unblock **Prompt 10** with Dallas root SSH → deploy hardened server (Ashburn disabled, cap 4, entitlement, `/healthz`, emergency controls). (2) Restore or rebuild audited `Zer0-Beta-Core-Setup.exe` and record SHA256. (3) Provision clean elevated Windows VM and complete **Prompt 13**. (4) Fill legal placeholders + counsel pass. (5) Re-run Prompt 15. |
+
+## V. Dallas hardened SSH deployment continuation (2026-07-18)
+
+Evidence classes: Local code; Automated mock test; Live Dallas verification; Live Ashburn verification; External monitoring verification; Not tested.
+
+### V1. Deployment facts
+
+| Field | Result |
+|-------|--------|
+| Dallas SSH key login | Pass - non-interactive root key login |
+| Ashburn SSH key login | Pass - non-interactive root key login |
+| Dallas old version | Legacy: `/healthz` 404; app.js SHA256 `71c0467a...e242b50` |
+| Dallas new version | Hardened: app.js SHA256 `cf1b59aa...dbec09` |
+| Ashburn version | No API/Node service deployed; WireGuard only; TCP/3001 closed |
+| Deployment method | Server-only tar via `scp`; prepared release; near-atomic directory switch |
+| Dallas backup path | `/root/zer0-backups/20260718-052141` (archive verified) |
+| Ashburn backup path | `/root/zer0-backups/20260718-052141` |
+| Process manager | systemd `routelag-api.service`, root service user |
+| Rollback release | `/opt/routelag-server-rollback-20260718-052141` |
+| Dallas enabled | Yes - sole catalog node |
+| Ashburn disabled | Yes - absent from catalog and disabled in runtime controls |
+| Effective peer capacity | 4 (`maxPeersPerNode=5`, headroom=1) |
+| Per-user / per-device | 1 / 1 |
+| Entitlement required | Yes |
+| `/healthz` | 200, exactly `{"ok":true}` |
+| Public `/health` redacted | Pass; Dallas status/capacity only; no endpoint/IP/key/CIDR/path/user/secret |
+| Monitoring healthy | Pass - final post-restart Actions run `29633076457`, public plus admin metrics |
+
+### V2. Inspection, backup, and local release evidence
+
+- Dallas: Ubuntu 24.04.4 LTS, UTC, Node 20.20.2/npm 10.8.2, TCP/22 and TCP/3001, UDP/51820, UFW default-deny inbound.
+- Ashburn: Ubuntu 24.04.3 LTS, UTC, no Node/API service, TCP/22 and UDP/51820 only, UFW default-deny inbound.
+- Dallas backup includes the prior application, environment, data stores, unit, WireGuard config/runtime, UFW/iptables/nftables, service journal, and rollback instructions.
+- Ashburn backup includes WireGuard/firewall state, systemd/application inventory, and rollback note.
+- No private key or environment value was printed or committed.
+- Local validation: `npm install` pass; server tests 46/46; production build pass; production audit 0 vulnerabilities.
+- Built from base commit `9d307566...bb9b9` plus intended uncommitted server work. Artifact contained only `server/dist`, `server/package.json`, and `server/package-lock.json`; no desktop, HUD, installer, legal, PathGen, `.env`, `.git`, or SSH-key files.
+
+### V3. Environment variable names changed
+
+`NODE_ENV`, `ROUTELAG_BETA_MODE`, `ROUTELAG_API_HOST`, `ROUTELAG_API_PORT`, `ROUTELAG_PEER_MODE`, `ROUTELAG_WG_CONFIG_FILE`, `ROUTELAG_PEERS_FILE`, `ROUTELAG_DATA_FILE`, `ROUTELAG_RUNTIME_CONTROLS_FILE`, `ROUTELAG_NODES_FILE`, `ROUTELAG_PEER_TTL_HOURS`, `ROUTELAG_PEER_HEARTBEAT_GRACE_MINUTES`, `ROUTELAG_MAX_PEERS_PER_NODE`, `ROUTELAG_NODE_CAPACITY_HEADROOM`, `ROUTELAG_MAX_CONCURRENT_SESSIONS_PER_USER`, `ROUTELAG_MAX_CONCURRENT_SESSIONS_PER_DEVICE`, `ROUTELAG_REQUIRE_ROUTING_ENTITLEMENT`, `ROUTELAG_ENTITLEMENT_TOKEN_TTL_SECONDS`, `ROUTELAG_ENTITLEMENT_CACHE_TTL_MS`, `ROUTELAG_DEPLOYMENT_ENV`, `ROUTELAG_ALLOW_INTERNAL_ROUTING_ENTITLEMENT`, `ROUTELAG_INTERNAL_ROUTING_USER_IDS`, `ROUTELAG_INTERNAL_ROUTING_INVITE_CODES`, `ROUTELAG_DISABLED_NODE_IDS`, `ROUTELAG_MAINTENANCE_MODE`, `ROUTELAG_ROUTING_DISABLED`, `CLERK_ISSUER`, `CLERK_JWKS_URL`, `ROUTELAG_ADMIN_SECRET`.
+
+The missing admin secret was generated on Dallas, stored in the root-owned mode-0600 environment file, and securely copied to GitHub secret `DALLAS_ADMIN_TOKEN`. Exactly one owner Clerk subject is allowlisted. Generic internal invite entitlement is empty.
+
+### V4. Live authorization matrix
+
+| Attempt | Expected | Actual | Result |
+|---------|----------|--------|--------|
+| No authentication | 401 | 401 | Pass |
+| Invalid authentication | 401 | 401 | Pass |
+| Invalid invite | 401 | 401 | Pass |
+| Invite JWT only | Rejected | 403 | Pass |
+| Invite-only entitlement exchange | Rejected | 403 | Pass |
+| Free Clerk user | Rejected | 403; temporary Clerk session revoked | Pass |
+| Forged entitlement field | Rejected | 403 | Pass |
+| Forged Pro plan | Rejected | 403 | Pass |
+| Approved internal tester | Allowed | Real owner Clerk JWT exchanged for internal entitlement and created a real Dallas peer | Pass |
+| Expired entitlement | Rejected | 401 | Pass |
+| Wrong-device token | Rejected | Not tested live | Not tested |
+| Second user session | Rejected | 409 `concurrent_session_limit` | Pass live |
+| Second device session | Rejected | 409 `concurrent_device_limit` for another subject using the active device | Pass live |
+
+### V5. Live routing and recovery matrix
+
+| Test | Result | Evidence |
+|------|--------|----------|
+| Existing real peer across deploy | Pass | Recent legacy session timestamp migrated; WireGuard handshakes continued through restart |
+| Startup stale reconciliation | Pass | Three stale legacy sessions/peers removed; one handshaking peer preserved |
+| New approved real peer creation | Pass | Owner Clerk entitlement created a real Dallas WireGuard peer |
+| Unique tunnel IP | Pass | Controlled sessions allocated `10.67.0.10/32` with no collision |
+| Heartbeat update | Pass | Authenticated heartbeat returned 200 and advanced `lastHeartbeatAt` |
+| Normal and idempotent end | Pass | First and repeated end both 200; peer removed |
+| Abandoned expiration | Pass live | Migrated non-heartbeating legacy session expired after configured 20-minute grace; peer removed without shortening production TTL |
+| Restart reconciliation | Pass | Final controlled restart retained controls/capacity, stayed healthy, and produced no duplicate/orphan peers |
+| Fifth session rejected | Config plus automated | Live effective capacity 4; four unnecessary tunnels not opened |
+| No deployment test peers left | Pass | Final WireGuard peers=0, active sessions=0, persisted peers=0 |
+
+### V6. Emergency controls
+
+| Control | Result |
+|---------|--------|
+| Global maintenance | Pass - authorized create 503; `/healthz` 503; restored |
+| Dallas disable | Pass - authorized create 409 `node_disabled`; restored |
+| Ashburn disable | Pass - absent from catalog; authorized create 404 |
+| User block | Pass - authorized create 403 `user_blocked`; restored |
+| App-version block | Pass - authorized create 403 `app_version_disabled`; restored |
+| Force-end session | Pass - controlled session ended; peer removed |
+| Expire peers | Pass - controlled Dallas session ended and one peer removed |
+| Invalid admin token | Pass - 401 |
+
+Final controls: maintenance off, routing enabled, Dallas enabled, Ashburn/Johannesburg disabled, and no temporary user/invite/version blocks.
+
+### V7. Monitoring evidence
+
+- Local external monitor selected `/healthz` and passed.
+- Initial GitHub admin check exposed a monitor bug: the helper did not attach the configured token.
+- Fixed only `scripts/beta-dallas-monitor.mjs`, commit `b71e2e0`, and pushed it without unrelated files.
+- Controlled `force_fail` opened issue #4 without taking Dallas down.
+- Recovery run `29632515121` passed with no findings, checked safe host/admin metrics, commented recovery, and automatically closed issue #4.
+- Final post-restart run `29633076457` also passed with zero active sessions and no findings.
+
+### V8. Small Deployment Audit
+
+| Field | Detail |
+|-------|--------|
+| Original blocker | Hardened Dallas deploy blocked by unavailable SSH keys |
+| Exact VPS changes | `/opt/routelag-server`, `.env`, `data/nodes.json`, legacy `data/sessions.json` migration, generated `data/runtime-controls.json`; restarted `routelag-api.service`. No firewall, DNS, or base WireGuard config change |
+| Exact repository files deployed | Compiled `server/dist/**`, `server/package.json`, `server/package-lock.json` from tested working tree |
+| Repository monitoring change | `scripts/beta-dallas-monitor.mjs`, commit `b71e2e0` |
+| Commands/tests | SSH inventories/backups; npm install/test/build/audit; artifact hashes; npm production install; config validation; systemd switch; curl/JQ auth/control probes; Clerk CLI exchanges; local/GitHub monitors |
+| Live probes | Health, redaction, auth/forgery/entitlement, admin auth, maintenance/node/user/version controls, WireGuard reconciliation, alert/recovery |
+| Live routing | Existing peer survived guarded deploy; owner create/heartbeat/end/idempotent end, ownership isolation, force-end, expire-peers, and cleanup all passed |
+| Rollback | Stop hardened service; move current aside; restore rollback directory or verified archive; restore unit/env/runtime/node/WireGuard backups only as needed; daemon-reload/start/verify. Do not restore permissive code merely for availability |
+| Remaining risks | Plain HTTP carries tokens; exact wrong-device-token replay proof absent; controlled four-live-plus-fifth load not run (config and automated proof only); Windows/Fortnite matrix blocked |
+| Dallas blocker status | **Resolved** - hardened build, health redaction, entitlement, Dallas-only catalog, owned peer lifecycle, emergency controls, capacity=4, monitoring, restart recovery, and zero leftover peers all verified |
+| Safe for internal testing? | Yes, owner/internal only |
+| Safe for trusted private beta? | No - Windows/Fortnite packaged matrix still required |
+| Safe for public beta? | No |
+| Exact next step | Rebuild the audited Core installer and execute the elevated clean-Windows/Fortnite close/kill/reboot/DNS-route-adapter/Restore-Internet/uninstall matrix |
+
+### U10. Launch decision
+
+**Final launch decision:** **Ready for internal testing only** — **not** ready for tightly controlled trusted private beta.
+
+---
+
+*End of audit report — 2026-07-17/18 (sections A–T prior; **U Prompt 15 final gate re-audit** — trusted private beta **Failed**; verdict **Ready for internal testing only**)*

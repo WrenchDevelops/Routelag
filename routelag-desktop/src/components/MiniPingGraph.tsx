@@ -13,7 +13,7 @@ function MiniPingGraphComponent({ samples, emptyLabel = "Run ping test" }: MiniP
   return (
     <div className="mini-graph">
       <span className="graph-label top">Ping</span>
-      <svg viewBox="0 0 280 120" role="img" aria-label="RouteLag ping graph">
+      <svg viewBox="0 0 280 120" role="img" aria-label="Zer0 ping graph">
         <path className="grid-line" d="M10 34 H270" />
         <path className="grid-line" d="M10 74 H270" />
         <path className="grid-line" d="M10 106 H270" />

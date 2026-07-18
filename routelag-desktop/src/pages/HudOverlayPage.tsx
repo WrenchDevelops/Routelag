@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Download, ExternalLink, MonitorOff } from "lucide-react";
 
@@ -12,6 +12,9 @@ import {
   siblingBounds,
   type HudDragOffset,
 } from "../lib/hudLayout";
+import { pushNotification } from "../lib/notifications";
+import { formatHudLaunchError } from "../lib/hudAccess";
+import { HUD_INFO_URL } from "../lib/supportUrls";
 import type { HudTelemetryData, HudTelemetrySnapshot, InstallInfo } from "../types";
 
 type HudWidgetId =
@@ -28,6 +31,7 @@ type HudWidgetId =
   | "match"
   | "damageDealt"
   | "damageTaken"
+  | "netDamage"
   | "deaths"
   | "assists";
 type WidgetStyle = "Minimal" | "Glass" | "Compact";
@@ -71,6 +75,7 @@ const baseWidgets: Omit<HudWidget, "value">[] = [
   { id: "zone", name: "Zone Timer", detail: "Storm timing", label: "ZONE", tone: "blue" },
   { id: "damageDealt", name: "Damage Dealt", detail: "Damage dealt to players", label: "DEALT", tone: "orange" },
   { id: "damageTaken", name: "Damage Taken", detail: "Damage taken from players", label: "TAKEN", tone: "orange" },
+  { id: "netDamage", name: "Net Damage", detail: "Damage dealt minus taken", label: "NET", tone: "yellow" },
 ];
 
 const FALLBACK_OVERLAY_LAYOUT: LayoutWidget[] = [
@@ -208,12 +213,12 @@ export function HudOverlayPage() {
   const hudRuntimeCorrupt = Boolean(installInfo?.hudCorrupt);
   const hudRuntimeHeadline = hudRuntimeCorrupt
     ? "HUD Runtime needs a reinstall"
-    : "Install the HUD Runtime to unlock this page";
+    : "Install the free Zer0 HUD Runtime";
   const hudRuntimeDescription = hudRuntimeCorrupt
-    ? "The RouteLag HUD Runtime installation looks damaged. Reinstall it to restore live Fortnite overlays and widget publishing."
-    : "The HUD Runtime connects RouteLag to your live Fortnite match so in-game overlays can receive ping, eliminations, and other stats.";
+    ? "The Zer0 HUD Runtime installation looks damaged. Reinstall the separate Overwolf HUD app to restore live Fortnite overlays."
+    : "The Zer0 HUD is a free, separate Overwolf application. It does not require a routing subscription, and Zer0 desktop does not need the HUD installed to keep routing.";
   const hudRuntimeFootnote =
-    "Routing and Replay Engine continue to work without the HUD Runtime.";
+    "HUD stays free and independent: closing Zer0 does not quit the HUD, and closing the HUD does not disconnect routing. Not an Overwolf store-published app yet — sideload / packaged runtime only.";
 
   const visibleWidgets = showMore
     ? widgets
@@ -324,9 +329,9 @@ export function HudOverlayPage() {
     try {
       await api.launchHudInstaller();
       setInstallInfo(await api.getInstallInfo());
-      showToast("HUD Runtime launched.", "success");
+      showToast("Zer0 HUD Runtime launched (separate from desktop).", "success");
     } catch (error) {
-      showToast(`Could not launch HUD installer: ${String(error)}`, "error");
+      showToast(formatHudLaunchError(error), "error");
     } finally {
       setInstallingHud(false);
     }
@@ -379,7 +384,13 @@ export function HudOverlayPage() {
       );
     } catch (error) {
       setRunning(false);
-      showToast(`Could not launch overlay: ${String(error)}`, "error");
+      showToast(formatHudLaunchError(error), "error");
+      pushNotification({
+        kind: "hud",
+        title: "Overlay failed to start",
+        body: formatHudLaunchError(error),
+        href: "hud",
+      });
     } finally {
       window.clearTimeout(safetyTimer);
       setLaunching(false);
@@ -413,8 +424,12 @@ export function HudOverlayPage() {
         <div>
           <div className="hud-title-row">
             <h1>HUD Overlay</h1>
+            <span className="hud-free-badge">Free · Separate Overwolf app</span>
           </div>
-          <p>Design the in-game HUD that receives live stats from the Overwolf runtime.</p>
+          <p>
+            Configure layout in Zer0, then launch the free Zer0 HUD Runtime. HUD does not need
+            Pro routing, and Fortnite does not need to be running to open this page.
+          </p>
           <div className="hud-runtime-card">
             <StatusPill
               label="Runtime"
@@ -658,12 +673,12 @@ export function HudOverlayPage() {
             <div className="hud-runtime-lock-top">
               <span className="hud-runtime-lock-kicker">HUD Runtime</span>
               <div className="hud-runtime-lock-icon" aria-hidden="true">
-                <MonitorOff size={24} strokeWidth={2.1} />
+                <MonitorOff size={24} strokeWidth={1.75} />
               </div>
             </div>
 
             <div className="hud-runtime-lock-copy">
-              <h2 id="hud-runtime-lock-title">HUD Runtime Not Installed</h2>
+              <h2 id="hud-runtime-lock-title">Free HUD Runtime Not Installed</h2>
               <p className="hud-runtime-lock-lead">{hudRuntimeHeadline}</p>
               <p className="hud-runtime-lock-body">{hudRuntimeDescription}</p>
             </div>
@@ -677,7 +692,7 @@ export function HudOverlayPage() {
                 disabled={installingHud}
                 onClick={() => void installHudRuntime()}
               >
-                <Download size={17} strokeWidth={2.2} aria-hidden />
+                <Download size={17} strokeWidth={1.75} aria-hidden />
                 {installingHud
                   ? "Opening Installer..."
                   : hudRuntimeCorrupt
@@ -685,13 +700,13 @@ export function HudOverlayPage() {
                     : "Install HUD Runtime"}
               </button>
               <a
-                href="https://routelag.com/hud"
+                href={HUD_INFO_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="hud-runtime-lock-secondary"
               >
-                <ExternalLink size={15} strokeWidth={2.2} aria-hidden />
-                Learn More
+                <ExternalLink size={15} strokeWidth={1.75} aria-hidden />
+                Installation guide
               </a>
             </div>
           </div>
@@ -741,6 +756,9 @@ function widgetValue(id: HudWidgetId, data: HudTelemetryData | undefined) {
       return data?.damageDealt != null ? String(data.damageDealt) : "--";
     case "damageTaken":
       return data?.damageTaken != null ? String(data.damageTaken) : "--";
+    case "netDamage":
+      if (data?.damageDealt == null && data?.damageTaken == null) return "--";
+      return String((data?.damageDealt ?? 0) - (data?.damageTaken ?? 0));
   }
 }
 
@@ -858,6 +876,7 @@ function widgetIcon(id: HudWidgetId) {
       return <TimerIcon />;
     case "damageDealt":
     case "damageTaken":
+    case "netDamage":
       return <DamageIcon />;
   }
 }

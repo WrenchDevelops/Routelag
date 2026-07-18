@@ -1,16 +1,17 @@
-//! Mirrors the registry layout the old `installer\includes\registry.nsh` used, so
-//! `routelag-desktop/src-tauri/src/install_info.rs` keeps working unchanged. Also adds a
-//! machine-wide Add/Remove Programs entry under HKLM, which the HKCU-only NSIS installer never
-//! wrote correctly for a machine-wide install.
+//! Dual-writes Zer0 + legacy RouteLag registry keys so desktop `install_info.rs`
+//! dual-read keeps working for upgrades. ARP display name remains Zer0.
 
 use winreg::enums::*;
 use winreg::RegKey;
 
 use crate::spec::ExistingInstall;
 
-const REG_APP: &str = "Software\\RouteLag";
-const REG_UNINST_SUBKEY: &str = "RouteLag Beta";
+const REG_APP_ZER0: &str = "Software\\Zer0";
+const REG_APP_LEGACY: &str = "Software\\RouteLag";
+const REG_UNINST_SUBKEY: &str = "Zer0 Beta";
 const REG_UNINST_PARENT: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+
+const APP_EXE_CANDIDATES: &[&str] = &["Zer0.exe", "RouteLag.exe", "RouteLag Beta.exe"];
 
 pub struct InstallMetadata {
     pub install_path: String,
@@ -24,17 +25,15 @@ pub struct InstallMetadata {
     pub channel: String,
 }
 
-/// Written by the elevated worker (HKCU is writable without elevation too, but we keep this in
-/// the same privileged step as the HKLM ARP write so a single UAC prompt covers everything).
-pub fn write_install_metadata(meta: &InstallMetadata) -> Result<(), String> {
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let (key, _) = hklm
-        .create_subkey(REG_APP)
-        .or_else(|_| RegKey::predef(HKEY_CURRENT_USER).create_subkey(REG_APP))
+fn write_metadata_to_hive(hive: isize, subkey: &str, meta: &InstallMetadata) -> Result<(), String> {
+    let root = RegKey::predef(hive);
+    let (key, _) = root.create_subkey(subkey).map_err(|e| e.to_string())?;
+    key.set_value("InstallPath", &meta.install_path)
         .map_err(|e| e.to_string())?;
-    key.set_value("InstallPath", &meta.install_path).map_err(|e| e.to_string())?;
-    key.set_value("Version", &meta.version).map_err(|e| e.to_string())?;
-    key.set_value("InstallType", &meta.install_type_label).map_err(|e| e.to_string())?;
+    key.set_value("Version", &meta.version)
+        .map_err(|e| e.to_string())?;
+    key.set_value("InstallType", &meta.install_type_label)
+        .map_err(|e| e.to_string())?;
     key.set_value("BaseAppInstalled", &(meta.base_app_installed as u32))
         .map_err(|e| e.to_string())?;
     key.set_value("EngineInstalled", &(meta.engine_installed as u32))
@@ -46,25 +45,44 @@ pub fn write_install_metadata(meta: &InstallMetadata) -> Result<(), String> {
         &meta.hud_runtime_path.clone().unwrap_or_default(),
     )
     .map_err(|e| e.to_string())?;
-    key.set_value("InstallTypeCode", &meta.install_type).map_err(|e| e.to_string())?;
-    key.set_value("InstalledAt", &crate::logging::timestamp()).map_err(|e| e.to_string())?;
-    key.set_value("InstallerVersion", &env!("CARGO_PKG_VERSION")).map_err(|e| e.to_string())?;
-    key.set_value("Channel", &meta.channel).map_err(|e| e.to_string())?;
+    key.set_value("InstallTypeCode", &meta.install_type)
+        .map_err(|e| e.to_string())?;
+    key.set_value("InstalledAt", &crate::logging::timestamp())
+        .map_err(|e| e.to_string())?;
+    key.set_value("InstallerVersion", &env!("CARGO_PKG_VERSION"))
+        .map_err(|e| e.to_string())?;
+    key.set_value("Channel", &meta.channel)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-pub fn read_existing_install() -> Option<ExistingInstall> {
+fn write_metadata_pair(subkey: &str, meta: &InstallMetadata) -> Result<(), String> {
+    write_metadata_to_hive(HKEY_LOCAL_MACHINE, subkey, meta)
+        .or_else(|_| write_metadata_to_hive(HKEY_CURRENT_USER, subkey, meta))
+}
+
+/// Dual-write: Zer0 first (canonical), then legacy RouteLag for older tools.
+pub fn write_install_metadata(meta: &InstallMetadata) -> Result<(), String> {
+    write_metadata_pair(REG_APP_ZER0, meta)?;
+    // Legacy dual-write — required so pre-Zer0 recovery tools still see InstallPath.
+    let _ = write_metadata_pair(REG_APP_LEGACY, meta);
+    Ok(())
+}
+
+fn read_from_key(subkey: &str) -> Option<ExistingInstall> {
     let key = RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey(REG_APP)
-        .or_else(|_| RegKey::predef(HKEY_CURRENT_USER).open_subkey(REG_APP))
+        .open_subkey(subkey)
+        .or_else(|_| RegKey::predef(HKEY_CURRENT_USER).open_subkey(subkey))
         .ok()?;
     let install_path: String = key.get_value("InstallPath").ok()?;
     if install_path.trim().is_empty() {
         return None;
     }
-    // Only report an install that's actually still on disk (registry can outlive a manual delete).
     let install_root = std::path::Path::new(&install_path);
-    if !install_root.join("RouteLag.exe").exists() && !install_root.join("RouteLag Beta.exe").exists() {
+    let has_exe = APP_EXE_CANDIDATES
+        .iter()
+        .any(|name| install_root.join(name).exists());
+    if !has_exe {
         return None;
     }
     let version: String = key.get_value("Version").unwrap_or_default();
@@ -87,26 +105,47 @@ pub fn read_existing_install() -> Option<ExistingInstall> {
     })
 }
 
+/// Prefer Zer0 registry, fall back to legacy RouteLag.
+pub fn read_existing_install() -> Option<ExistingInstall> {
+    read_from_key(REG_APP_ZER0).or_else(|| read_from_key(REG_APP_LEGACY))
+}
+
+pub fn resolve_app_exe(install_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    for name in APP_EXE_CANDIDATES {
+        let path = install_dir.join(name);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 pub fn write_arp_entry(install_path: &str, version: &str, estimated_size_kb: u32) -> Result<(), String> {
     let key = create_arp_subkey(RegKey::predef(HKEY_LOCAL_MACHINE))
         .or_else(|_| create_arp_subkey(RegKey::predef(HKEY_CURRENT_USER)))
         .map_err(|e| e.to_string())?;
 
-    key.set_value("DisplayName", &"RouteLag Beta").map_err(|e| e.to_string())?;
-    key.set_value("DisplayVersion", &version).map_err(|e| e.to_string())?;
-    key.set_value("Publisher", &"RouteLag").map_err(|e| e.to_string())?;
-    key.set_value("InstallLocation", &install_path).map_err(|e| e.to_string())?;
+    let icon_exe = resolve_app_exe(std::path::Path::new(install_path))
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| format!("{install_path}\\Zer0.exe"));
+
+    key.set_value("DisplayName", &"Zer0 Beta")
+        .map_err(|e| e.to_string())?;
+    key.set_value("DisplayVersion", &version)
+        .map_err(|e| e.to_string())?;
+    key.set_value("Publisher", &"Zer0")
+        .map_err(|e| e.to_string())?;
+    key.set_value("InstallLocation", &install_path)
+        .map_err(|e| e.to_string())?;
     key.set_value(
         "UninstallString",
         &format!("\"{install_path}\\uninstall.exe\""),
     )
     .map_err(|e| e.to_string())?;
-    key.set_value(
-        "DisplayIcon",
-        &format!("{install_path}\\RouteLag Beta.exe"),
-    )
-    .map_err(|e| e.to_string())?;
-    key.set_value("EstimatedSize", &estimated_size_kb).map_err(|e| e.to_string())?;
+    key.set_value("DisplayIcon", &icon_exe)
+        .map_err(|e| e.to_string())?;
+    key.set_value("EstimatedSize", &estimated_size_kb)
+        .map_err(|e| e.to_string())?;
     key.set_value("NoModify", &1u32).map_err(|e| e.to_string())?;
     key.set_value("NoRepair", &1u32).map_err(|e| e.to_string())?;
     Ok(())
@@ -119,19 +158,25 @@ fn create_arp_subkey(root: RegKey) -> Result<RegKey, std::io::Error> {
 }
 
 pub fn remove_arp_entry() -> Result<(), String> {
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok(parent) = hklm.open_subkey_with_flags(REG_UNINST_PARENT, KEY_ALL_ACCESS) {
-        let _ = parent.delete_subkey_all(REG_UNINST_SUBKEY);
-    }
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    if let Ok(parent) = hkcu.open_subkey_with_flags(REG_UNINST_PARENT, KEY_ALL_ACCESS) {
-        let _ = parent.delete_subkey_all(REG_UNINST_SUBKEY);
+    for subkey in [REG_UNINST_SUBKEY, "RouteLag Beta"] {
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        if let Ok(parent) = hklm.open_subkey_with_flags(REG_UNINST_PARENT, KEY_ALL_ACCESS) {
+            let _ = parent.delete_subkey_all(subkey);
+        }
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        if let Ok(parent) = hkcu.open_subkey_with_flags(REG_UNINST_PARENT, KEY_ALL_ACCESS) {
+            let _ = parent.delete_subkey_all(subkey);
+        }
     }
     Ok(())
 }
 
 pub fn remove_app_metadata() -> Result<(), String> {
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let _ = hkcu.delete_subkey_all(REG_APP);
+    for subkey in [REG_APP_ZER0, REG_APP_LEGACY] {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let _ = hkcu.delete_subkey_all(subkey);
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let _ = hklm.delete_subkey_all(subkey);
+    }
     Ok(())
 }

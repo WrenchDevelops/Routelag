@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../api";
 import { DiagnosticsSummaryCards, RouteComparisonCard } from "../components/DiagnosticsCards";
@@ -81,7 +81,7 @@ export function DiagnosticsPage() {
       const msg = String(e);
       if (msg.includes("Disconnect temporarily") || msg.includes("tunnel is connected")) {
         setDisconnectModal(true);
-      } else if (msg.includes("Connect RouteLag")) {
+      } else if (msg.includes("Connect RouteLag") || msg.includes("Connect Zer0")) {
         showToast(
           "Connect the tunnel in admin mode first, then run diagnostics again.",
           "warning",
@@ -224,7 +224,7 @@ export function DiagnosticsPage() {
             />
           </label>
           <label className="text-sm text-gray-300">
-            RouteLag Fortnite ping (ms)
+            Zer0 Fortnite ping (ms)
             <input
               type="number"
               min={0}
@@ -281,7 +281,7 @@ export function DiagnosticsPage() {
       {running && (
         <p className="text-sm text-accent cursor-wait">
           Testing the current route, DNS, MTU, and machine info. This run does
-          not connect or disconnect RouteLag.
+          not connect or disconnect Zer0.
         </p>
       )}
 
@@ -291,7 +291,7 @@ export function DiagnosticsPage() {
 
       {report?.wireguard && (
         <div className="rounded-xl border border-border bg-card p-4">
-          <h3 className="text-sm font-medium text-white">RouteLag Engine</h3>
+          <h3 className="text-sm font-medium text-white">Zer0 Engine</h3>
           <div className="mt-3 grid gap-2 font-mono text-xs text-gray-300 sm:grid-cols-2">
             {report.wireguard.endpoint && (
               <p>Endpoint: {report.wireguard.endpoint}</p>
@@ -342,7 +342,7 @@ export function DiagnosticsPage() {
               Disconnect for normal route test?
             </h2>
             <p className="mt-3 text-sm text-gray-300">
-              Diagnostics no longer disconnects or reconnects RouteLag by
+              Diagnostics no longer disconnects or reconnects Zer0 by
               default. Use Restore Internet first if the tunnel is stuck.
             </p>
             <div className="mt-6 flex justify-end gap-2">

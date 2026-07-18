@@ -3156,7 +3156,7 @@ dependencies = [
 
 [[package]]
 name = "routelag-desktop"
-version = "0.1.4"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "rand 0.8.6",
@@ -3173,6 +3173,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-shell",
  "thiserror 2.0.18",
+ "url",
  "windows-sys 0.59.0",
  "zip",
 ]

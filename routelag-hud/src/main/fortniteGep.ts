@@ -158,7 +158,7 @@ export class FortniteGep extends EventEmitter {
 
     this.gep.on("elevated-privileges-required", (_event, gameId) => {
       if (!isFortniteGameId(Number(gameId))) return;
-      logger.warn("Fortnite is elevated — run RouteLag HUD as administrator for live stats");
+      logger.warn("Fortnite is elevated — run Zer0 HUD as administrator for live stats");
     });
 
     this.gep.on("new-info-update", (_event, gameId, update) => {

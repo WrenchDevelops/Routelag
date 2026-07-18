@@ -19,6 +19,7 @@ export function InstallerShell({
   showStepper = true,
   welcomeLayout = false,
   installTypeLayout = false,
+  readyLayout = false,
   children,
   footer,
 }: {
@@ -28,6 +29,7 @@ export function InstallerShell({
   showStepper?: boolean;
   welcomeLayout?: boolean;
   installTypeLayout?: boolean;
+  readyLayout?: boolean;
   children: ReactNode;
   footer?: ReactNode;
 }) {
@@ -38,7 +40,7 @@ export function InstallerShell({
 
   return (
     <div
-      className={`installer-shell${welcomeLayout ? " installer-shell-welcome" : ""}${installTypeLayout ? " installer-shell-install-type" : ""}`}
+      className={`installer-shell${welcomeLayout ? " installer-shell-welcome" : ""}${installTypeLayout ? " installer-shell-install-type" : ""}${readyLayout ? " installer-shell-ready" : ""}`}
     >
       <div
         className="installer-shell-drag"
@@ -49,7 +51,7 @@ export function InstallerShell({
 
       {showLogo ? (
         <header className="installer-header">
-          <RouteLagLogo size={96} />
+          <RouteLagLogo size={welcomeLayout ? 88 : readyLayout ? 52 : 64} showWordmark={welcomeLayout} />
         </header>
       ) : null}
 

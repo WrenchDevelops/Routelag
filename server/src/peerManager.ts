@@ -2,11 +2,43 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import type { ServerConfig } from "./config.js";
-import { clientStartOctet, tunnelNetworkPrefix, type RouteNode } from "./nodes.js";
+import { clientStartOctet, tunnelNetworkPrefix, type RouteNode, type RouteNodeProvisioner } from "./nodes.js";
 import { PeersStore } from "./peersStore.js";
 import type { RouteSession } from "./store.js";
 
 const execFileAsync = promisify(execFile);
+
+function assertSshProvisioner(node: RouteNode): Required<
+  Pick<RouteNodeProvisioner, "host" | "user" | "privateKeyPath">
+> {
+  const { host, user = "root", privateKeyPath } = node.provisioner;
+  if (!host?.trim() || !privateKeyPath?.trim()) {
+    throw new Error(
+      `SSH provisioner for node "${node.id}" requires host and privateKeyPath.`,
+    );
+  }
+  return {
+    host: host.trim(),
+    user: user.trim() || "root",
+    privateKeyPath: privateKeyPath.trim(),
+  };
+}
+
+async function runRemoteWg(node: RouteNode, wgArgs: string[]): Promise<string> {
+  const ssh = assertSshProvisioner(node);
+  const { stdout } = await execFileAsync("ssh", [
+    "-i",
+    ssh.privateKeyPath,
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "StrictHostKeyChecking=accept-new",
+    `${ssh.user}@${ssh.host}`,
+    "wg",
+    ...wgArgs,
+  ]);
+  return stdout;
+}
 
 export interface PeerStatus {
   latestHandshake: string | null;
@@ -27,7 +59,14 @@ export class PeerManager {
   private readonly peersStore: PeersStore;
 
   constructor(private readonly config: ServerConfig) {
-    this.peersStore = new PeersStore(config.peersFile, config.wgConfigFile);
+    const localMirrorNodeIds = new Set(
+      config.nodes.filter((node) => node.provisioner.mode === "local").map((node) => node.id),
+    );
+    this.peersStore = new PeersStore(config.peersFile, config.wgConfigFile, localMirrorNodeIds);
+  }
+
+  listPersistedPeers() {
+    return this.peersStore.listPeers();
   }
 
   /** Allocates the next free client IP from the given node's own tunnel subnet. */
@@ -53,6 +92,12 @@ export class PeerManager {
     return this.peersStore.findPeer(node.id, publicKey);
   }
 
+  /**
+   * Create a WireGuard peer. Always updates PeersStore (including mock mode)
+   * so IP/publicKey uniqueness and restart reconciliation stay consistent.
+   * On WireGuard command failure after a partial remote change, best-effort
+   * remove is attempted before rethrowing.
+   */
   async createPeer(
     node: RouteNode,
     clientPublicKey: string,
@@ -62,19 +107,55 @@ export class PeerManager {
     if (node.provisioner.mode === "disabled") {
       throw new PeerProvisioningDisabledError(node.id);
     }
-    if (this.config.peerMode === "mock") return;
-    if (node.provisioner.mode === "ssh") {
-      throw new Error(`SSH-based peer provisioning is not implemented yet for node "${node.id}".`);
+
+    const existing = this.peersStore.findPeer(node.id, clientPublicKey);
+    if (existing && existing.clientIp !== clientIp) {
+      throw new Error(
+        `Public key already provisioned on node "${node.id}" with a different tunnel IP.`,
+      );
     }
-    // Server-side peer AllowedIPs must be the client tunnel /32 only — never game targets.
-    await execFileAsync("wg", [
-      "set",
-      node.wgInterface,
-      "peer",
-      clientPublicKey,
-      "allowed-ips",
-      clientIp,
-    ]);
+
+    if (this.config.peerMode === "mock") {
+      this.peersStore.upsertPeer({
+        nodeId: node.id,
+        publicKey: clientPublicKey,
+        clientIp,
+        createdAt: new Date().toISOString(),
+        testerId,
+      });
+      return;
+    }
+
+    try {
+      if (node.provisioner.mode === "ssh") {
+        await runRemoteWg(node, [
+          "set",
+          node.wgInterface,
+          "peer",
+          clientPublicKey,
+          "allowed-ips",
+          clientIp,
+        ]);
+      } else {
+        // Server-side peer AllowedIPs must be the client tunnel /32 only — never game targets.
+        await execFileAsync("wg", [
+          "set",
+          node.wgInterface,
+          "peer",
+          clientPublicKey,
+          "allowed-ips",
+          clientIp,
+        ]);
+      }
+    } catch (error) {
+      try {
+        await this.removePeer(node, clientPublicKey);
+      } catch {
+        // Best-effort cleanup after partial failure.
+      }
+      throw error;
+    }
+
     this.peersStore.upsertPeer({
       nodeId: node.id,
       publicKey: clientPublicKey,
@@ -85,7 +166,22 @@ export class PeerManager {
   }
 
   async removePeer(node: RouteNode, clientPublicKey: string): Promise<void> {
-    if (this.config.peerMode === "mock" || node.provisioner.mode !== "local") {
+    if (this.config.peerMode === "mock") {
+      this.peersStore.removePeer(node.id, clientPublicKey);
+      return;
+    }
+    if (node.provisioner.mode === "ssh") {
+      await runRemoteWg(node, [
+        "set",
+        node.wgInterface,
+        "peer",
+        clientPublicKey,
+        "remove",
+      ]);
+      this.peersStore.removePeer(node.id, clientPublicKey);
+      return;
+    }
+    if (node.provisioner.mode !== "local") {
       this.peersStore.removePeer(node.id, clientPublicKey);
       return;
     }
@@ -94,7 +190,19 @@ export class PeerManager {
   }
 
   async getPeerStatus(node: RouteNode, clientPublicKey: string): Promise<PeerStatus> {
-    if (this.config.peerMode === "mock" || node.provisioner.mode !== "local") {
+    if (this.config.peerMode === "mock") {
+      return {
+        latestHandshake: null,
+        transferRx: null,
+        transferTx: null,
+        active: false,
+      };
+    }
+    if (node.provisioner.mode === "ssh") {
+      const stdout = await runRemoteWg(node, ["show", node.wgInterface]);
+      return parsePeerStatus(stdout, clientPublicKey);
+    }
+    if (node.provisioner.mode !== "local") {
       return {
         latestHandshake: null,
         transferRx: null,

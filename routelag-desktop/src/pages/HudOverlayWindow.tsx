@@ -234,6 +234,8 @@ function widgetLabel(id: string) {
       return "Damage Dealt";
     case "damageTaken":
       return "Damage Taken";
+    case "netDamage":
+      return "Net Damage";
     default:
       return id;
   }
@@ -275,6 +277,9 @@ function widgetValue(id: string, data: HudTelemetryData) {
       return data.damageDealt != null ? String(data.damageDealt) : "--";
     case "damageTaken":
       return data.damageTaken != null ? String(data.damageTaken) : "--";
+    case "netDamage":
+      if (data.damageDealt == null && data.damageTaken == null) return "--";
+      return String((data.damageDealt ?? 0) - (data.damageTaken ?? 0));
     default:
       return "--";
   }
@@ -305,6 +310,7 @@ function widgetIcon(id: string) {
       return <TimerIcon />;
     case "damageDealt":
     case "damageTaken":
+    case "netDamage":
       return <DamageIcon />;
     default:
       return null;

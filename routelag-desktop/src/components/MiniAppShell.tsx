@@ -1,22 +1,31 @@
 import type { ReactNode } from "react";
 
-import { DragHeader } from "./DragHeader";
+import type { MiniView } from "../App";
+import { DragHeader, type SessionStripProps } from "./DragHeader";
 
 interface MiniAppShellProps {
   children: ReactNode;
   footer?: ReactNode;
-  onSettings?: () => void;
+  currentView?: MiniView;
+  onNavigate?: (view: MiniView) => void;
+  sessionStrip?: SessionStripProps | null;
 }
 
 export function MiniAppShell({
   children,
   footer,
-  onSettings,
+  currentView,
+  onNavigate,
+  sessionStrip,
 }: MiniAppShellProps) {
   return (
     <main className="app-root">
       <section className="route-card">
-        <DragHeader onSettings={onSettings} />
+        <DragHeader
+          currentView={currentView}
+          onNavigate={onNavigate}
+          sessionStrip={sessionStrip}
+        />
         <div className="route-card-content">
           <div className="mini-screen">{children}</div>
           {footer}

@@ -1,8 +1,8 @@
 [package]
 name = "routelag-installer"
 version = "0.1.4"
-description = "RouteLag custom installer bootstrapper"
-authors = ["RouteLag"]
+description = "Zer0 custom installer bootstrapper"
+authors = ["Zer0"]
 edition = "2021"
 default-run = "routelag-setup"
 

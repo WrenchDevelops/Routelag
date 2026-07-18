@@ -2,11 +2,11 @@
   "manifest_version": 1,
   "type": "WebApp",
   "meta": {
-    "name": "RouteLag HUD Companion",
+    "name": "Zer0 HUD Companion",
     "version": "0.1.0",
     "minimum-overwolf-version": "0.265.0",
-    "author": "RouteLag",
-    "description": "Configurable Fortnite performance HUD powered by RouteLag."
+    "author": "Zer0",
+    "description": "Free Fortnite performance HUD for Zer0. Separate from routing — not Overwolf-store published yet."
   },
   "data": {
     "game_events": [21216],

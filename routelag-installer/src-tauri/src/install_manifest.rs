@@ -12,7 +12,7 @@ pub fn load_release_manifest() -> Result<(ReleaseManifest, String), String> {
     }
 
     let response = reqwest::blocking::get(REMOTE_MANIFEST_URL)
-        .map_err(|_| "RouteLag could not reach the download server. Check your connection and try again.".to_string())?;
+        .map_err(|_| "Zer0 could not reach the download server. Check your connection and try again.".to_string())?;
     if !response.status().is_success() {
         return Err(format!("download server returned {}", response.status()));
     }

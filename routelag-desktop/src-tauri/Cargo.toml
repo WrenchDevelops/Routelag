@@ -1,8 +1,8 @@
 [package]
 name = "routelag-desktop"
-version = "0.1.4"
-description = "RouteLag Beta - targeted routing test app"
-authors = ["RouteLag"]
+version = "0.2.1"
+description = "Zer0 - targeted routing app"
+authors = ["Zer0"]
 edition = "2021"
 
 [lib]
@@ -19,6 +19,7 @@ default = ["custom-protocol"]
 # loading the Vite dev server. `tauri build` enables this automatically; bare
 # `cargo build` does not, so we enable it by default and packaging always uses it.
 custom-protocol = ["tauri/custom-protocol"]
+disable-hud = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -39,6 +40,7 @@ reqwest = { version = "0.12", features = ["blocking", "multipart", "rustls-tls"]
 zip = "2"
 rand = "0.8"
 sha2 = "0.10"
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

@@ -336,7 +336,7 @@ pub fn load_report(app_data_dir: &Path) -> Option<DiagnosticsReport> {
 
 pub fn build_report_text(report: &DiagnosticsReport) -> String {
     let mut out = String::new();
-    out.push_str("=== RouteLag Beta Diagnostics Report ===\n");
+    out.push_str("=== Zer0 Diagnostics Report ===\n");
     out.push_str(&format!("Generated: {}\n", report.generated_at));
     out.push_str(&format!("App version: {}\n", report.app_version));
     out.push_str(&format!("Route Score: {}\n", report.route_score));

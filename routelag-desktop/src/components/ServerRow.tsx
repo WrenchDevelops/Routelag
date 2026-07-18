@@ -1,4 +1,4 @@
-import type { RouteOption } from "../App";
+﻿import type { RouteOption } from "../App";
 
 interface ServerRowProps {
   route: RouteOption;
@@ -47,7 +47,7 @@ export function ServerRow({ onSelect, route, selected }: ServerRowProps) {
 function routeSubtitle(route: RouteOption) {
   if (route.meta) return route.meta;
   const location = [route.city, route.country].filter(Boolean).join(", ");
-  return location || "RouteLag beta server";
+  return location || "Zer0 server";
 }
 
 function statusLabel(status?: string, available?: boolean) {

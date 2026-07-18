@@ -5,7 +5,7 @@ export function AddHudPage({ installPath, hudSizeBytes }: { installPath: string;
     <div className="page page-wide">
       <h1 className="page-title">Add HUD Runtime</h1>
       <p className="page-subtitle">
-        RouteLag is already installed. This adds the HUD Runtime for live Fortnite overlays without
+        Zer0 is already installed. This adds the HUD Runtime for live Fortnite overlays without
         changing your existing app or engine.
       </p>
       <div className="location-meta">
@@ -18,7 +18,7 @@ export function AddHudPage({ installPath, hudSizeBytes }: { installPath: string;
           <span className="location-meta-value">{formatBytes(hudSizeBytes)}</span>
         </div>
       </div>
-      <p className="page-note">RouteLag will close briefly during install.</p>
+      <p className="page-note">Zer0 will close briefly during install.</p>
     </div>
   );
 }

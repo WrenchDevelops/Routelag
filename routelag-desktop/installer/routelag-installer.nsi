@@ -301,7 +301,7 @@ Function pg_Welcome_Create
   ${HRule} 155u
 
   ; ── Footer ──
-  ${NSD_CreateLabel} 20 160u 92% 8u "routelag.com  ·  Privacy Policy  ·  Support"
+  ${NSD_CreateLabel} 20 160u 92% 8u "routelag.com  ·  Privacy  ·  Terms  ·  Support (legal drafts; hosted URLs pending)"
   Pop $0
   ${MutedCtl} $0
   ${ApplyFont} $0 $hFont_Small

@@ -7,7 +7,7 @@ use crate::registry;
 use crate::shortcuts;
 use crate::spec::{ProgressLine, UninstallJob};
 
-const APP_PROCESS_NAME: &str = "RouteLag.exe";
+const APP_PROCESS_NAMES: &[&str] = &["Zer0.exe", "RouteLag.exe", "RouteLag Beta.exe"];
 
 fn emit(progress_file: &str, line: ProgressLine) {
     let Ok(json) = serde_json::to_string(&line) else { return };
@@ -50,22 +50,33 @@ fn run_uninstall_inner(job: &UninstallJob) -> Result<(), String> {
     let install_dir = PathBuf::from(&job.install_dir);
     let progress_file = job.progress_file.as_str();
 
-    emit(progress_file, ProgressLine::step("stop", "Stopping RouteLag", 5));
-    process_kill::kill_by_name(APP_PROCESS_NAME);
-    process_kill::kill_by_name("RouteLag Beta.exe");
+    emit(progress_file, ProgressLine::step("stop", "Stopping Zer0", 5));
+    for name in APP_PROCESS_NAMES {
+        process_kill::kill_by_name(name);
+    }
     process_kill::kill_by_name("RouteLagHUD.exe");
+    process_kill::kill_by_name("Zer0HUD.exe");
+
+    // Disconnect owned tunnels BEFORE deleting engine binaries so uninstall can use them.
+    // Only Zer0/RouteLag profile names are touched — never unrelated WireGuard/VPN software.
+    emit(
+        progress_file,
+        ProgressLine::step("network", "Disconnecting Zer0 networking", 12),
+    );
+    crate::network_cleanup::disconnect_owned_networking(Some(&install_dir));
 
     emit(progress_file, ProgressLine::step("hud", "Removing HUD Runtime", 20));
     let _ = std::fs::remove_dir_all(install_dir.join("hud"));
 
-    emit(progress_file, ProgressLine::step("engine", "Removing RouteLag Engine", 35));
+    emit(progress_file, ProgressLine::step("engine", "Removing Zer0 Engine", 35));
     let _ = std::fs::remove_dir_all(install_dir.join("engine"));
 
     emit(progress_file, ProgressLine::step("app", "Removing application files", 55));
     let _ = std::fs::remove_dir_all(install_dir.join("resources"));
     let _ = std::fs::remove_file(install_dir.join("install-manifest.json"));
-    let _ = std::fs::remove_file(install_dir.join("RouteLag.exe"));
-    let _ = std::fs::remove_file(install_dir.join("RouteLag Beta.exe"));
+    for name in APP_PROCESS_NAMES {
+        let _ = std::fs::remove_file(install_dir.join(name));
+    }
 
     emit(progress_file, ProgressLine::step("shortcuts", "Removing shortcuts", 70));
     shortcuts::remove_shortcuts(&public_desktop_dir(), &common_start_menu_dir());
@@ -73,10 +84,16 @@ fn run_uninstall_inner(job: &UninstallJob) -> Result<(), String> {
     if job.remove_user_data {
         emit(progress_file, ProgressLine::step("userdata", "Removing user data", 80));
         if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
-            let _ = std::fs::remove_dir_all(PathBuf::from(&local_appdata).join("RouteLag"));
+            let local = PathBuf::from(&local_appdata);
+            let _ = std::fs::remove_dir_all(local.join("Zer0"));
+            let _ = std::fs::remove_dir_all(local.join("RouteLag"));
         }
         if let Some(appdata) = std::env::var_os("APPDATA") {
-            let _ = std::fs::remove_dir_all(PathBuf::from(&appdata).join("com.routelag.beta"));
+            let roaming = PathBuf::from(&appdata);
+            let _ = std::fs::remove_dir_all(roaming.join("com.zer0.app"));
+            let _ = std::fs::remove_dir_all(roaming.join("com.routelag.beta"));
+            let _ = std::fs::remove_dir_all(roaming.join("Zer0"));
+            let _ = std::fs::remove_dir_all(roaming.join("RouteLag"));
         }
     }
 

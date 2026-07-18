@@ -6,6 +6,10 @@ export default defineConfig({
   base: "./",
   plugins: [react(), tailwindcss()],
   clearScreen: false,
+  build: {
+    // Production bundles must not ship source maps (secrets / internals leakage risk).
+    sourcemap: false,
+  },
   server: {
     port: 1420,
     strictPort: true,

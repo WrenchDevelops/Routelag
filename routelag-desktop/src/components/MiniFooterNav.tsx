@@ -14,7 +14,7 @@ export function MiniFooterNav({
   onLogs,
 }: MiniFooterNavProps) {
   return (
-    <nav className="mini-footer" aria-label="RouteLag tools">
+    <nav className="mini-footer" aria-label="Zer0 tools">
       {onDiagnostics && (
         <button type="button" onClick={onDiagnostics}>
           Diagnostics

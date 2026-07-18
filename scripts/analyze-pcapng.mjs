@@ -22,6 +22,7 @@ function bump(map, key, bytes = 1) {
 
 const EXCLUDE_DST = new Set([
   "216.152.154.137",
+  "66.163.122.222",
 ]);
 
 function isPrivateIp(ip) {
@@ -57,7 +58,7 @@ function parseIpPacket(pkt) {
 
   if (EXCLUDE_DST.has(dst)) return;
   if (isPrivateIp(dst)) return;
-  if (dst.startsWith("10.67.")) return;
+  if (dst.startsWith("10.67.") || dst.startsWith("10.68.")) return;
 
   bump(dstAll, `${src} -> ${dst}`, payloadLen);
 

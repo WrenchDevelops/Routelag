@@ -8,7 +8,7 @@ export function buildCandidates(nodes: RouteNode[], game: string): RouteCandidat
     {
       id: "direct",
       type: "direct",
-      label: "Direct (RouteLag OFF)",
+      label: "Direct (Zer0 OFF)",
       hopCount: 0,
       status: "available",
       canStart: false,

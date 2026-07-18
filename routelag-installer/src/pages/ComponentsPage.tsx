@@ -27,11 +27,11 @@ export function ComponentsPage({
     <div className="page page-wide page-split">
       <div className="page-main">
         <h1 className="page-title">Choose Components</h1>
-        <p className="page-subtitle">Select what RouteLag should install.</p>
+        <p className="page-subtitle">Select what Zer0 should install.</p>
 
         <div className="checkbox-list">
           <CheckboxRow
-            title="RouteLag App"
+            title="Zer0 App"
             badge="Required"
             description="Core desktop app, routing dashboard, replay engine, settings, and account."
             checked={selection.includeApp}
@@ -40,7 +40,7 @@ export function ComponentsPage({
             onChange={(checked) => update({ includeApp: checked })}
           />
           <CheckboxRow
-            title="RouteLag Engine"
+            title="Zer0 Engine"
             badge="Required for routing"
             description="Handles network optimization and route controls."
             checked={selection.includeEngine}
@@ -49,7 +49,7 @@ export function ComponentsPage({
             onChange={(checked) => update({ includeEngine: checked })}
           />
           <CheckboxRow
-            title="RouteLag HUD Runtime"
+            title="Zer0 HUD Runtime"
             badge="Optional"
             description="Required for live Fortnite HUD overlays."
             checked={selection.includeHud}
@@ -59,7 +59,7 @@ export function ComponentsPage({
           <CheckboxRow
             title="Desktop Shortcut"
             badge="Optional"
-            description="Adds a RouteLag shortcut to your desktop."
+            description="Adds a Zer0 shortcut to your desktop."
             checked={selection.includeDesktopShortcut}
             disabled={hudOnlyMode}
             onChange={(checked) => update({ includeDesktopShortcut: checked })}
@@ -67,7 +67,7 @@ export function ComponentsPage({
           <CheckboxRow
             title="Start Menu Shortcut"
             badge="Optional"
-            description="Adds RouteLag to the Windows Start Menu."
+            description="Adds Zer0 to the Windows Start Menu."
             checked={selection.includeStartMenuShortcut}
             disabled={hudOnlyMode}
             onChange={(checked) => update({ includeStartMenuShortcut: checked })}

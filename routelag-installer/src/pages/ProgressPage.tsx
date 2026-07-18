@@ -25,7 +25,7 @@ export function ProgressPage({
         <div className="progress-main">
           <h1 className="page-title">{title}</h1>
           <p className="page-subtitle">
-            {errorMessage ? "Something went wrong." : subtitle ?? "Please wait while RouteLag is being installed."}
+            {errorMessage ? "Something went wrong." : subtitle ?? "Please wait while Zer0 is being installed."}
           </p>
 
           <div className="progress-ring-wrap" aria-hidden="true">

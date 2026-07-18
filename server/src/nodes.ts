@@ -161,7 +161,60 @@ const JOHANNESBURG_BETA: RouteNode = {
   pingEstimate: "Test in Fortnite",
 };
 
-export const DEFAULT_NODES: RouteNode[] = [JOHANNESBURG_BETA, DALLAS_BETA];
+/**
+ * Ashburn Beta — NA-East test node. Peer provisioning runs over SSH from the
+ * Dallas API host.
+ */
+const ASHBURN_BETA: RouteNode = {
+  id: "ashburn-beta",
+  gameId: "fortnite",
+  name: "Ashburn Beta",
+  label: "United States",
+  city: "Ashburn",
+  country: "United States",
+  region: "NA-East",
+  available: true,
+
+  endpoint: "66.163.122.222:51820",
+  publicIp: "66.163.122.222",
+  wireguardPort: 51820,
+  publicKey: "NZU7VaQSWaQdzCUtsHPYUIpEJUFqahgAmbZ6UI1bSA8=",
+
+  tunnelCidr: "10.68.0.0/24",
+  serverTunnelIp: "10.68.0.1",
+  clientStartIp: "10.68.0.10",
+
+  wgInterface: "wg0",
+
+  targets: [
+    {
+      id: "fortnite-na-epic",
+      ip: "18.88.0.0",
+      cidr: "18.88.0.0/16",
+      region: "NA",
+      protocol: "udp",
+      ports: [],
+      enabled: true,
+    },
+  ],
+
+  provisioner: {
+    mode: "ssh",
+    host: "66.163.122.222",
+    user: "root",
+    privateKeyPath: "/opt/routelag-server/keys/ashburn-provisioner",
+  },
+
+  tags: ["na", "nae", "virginia", "ashburn", "beta"],
+
+  status: "online",
+  notes: "NA-East test node for targeted Fortnite routing.",
+  debugLabel: "na-east",
+  recommended: true,
+  pingEstimate: "Test in Fortnite",
+};
+
+export const DEFAULT_NODES: RouteNode[] = [JOHANNESBURG_BETA, DALLAS_BETA, ASHBURN_BETA];
 
 /**
  * Loads RouteNode config, preferring an external JSON file
@@ -322,7 +375,11 @@ export function nodeStatus(node: RouteNode): RouteNodeStatus {
 }
 
 export function canStartNode(node: RouteNode): boolean {
-  return node.available && node.provisioner.mode !== "disabled";
+  return (
+    node.available &&
+    node.provisioner.mode !== "disabled" &&
+    nodeStatus(node) !== "maintenance"
+  );
 }
 
 /** Old `/api/servers` server shape, derived from a RouteNode, for app compatibility. */
@@ -357,6 +414,30 @@ export function publicNode(node: RouteNode) {
   };
 }
 
+/**
+ * Public /health node summary — enough for uptime/capacity monitoring without
+ * leaking endpoint, tunnel CIDR, public IP, or provisioner details.
+ */
+export function publicHealthNode(
+  node: RouteNode,
+  opts: {
+    acceptingRoutes: boolean;
+    capacityState: "ok" | "full" | "disabled";
+    usedPercent: number | null;
+  },
+) {
+  return {
+    id: node.id,
+    status: nodeStatus(node),
+    acceptingRoutes: opts.acceptingRoutes,
+    capacity: {
+      state: opts.capacityState,
+      usedPercent: opts.usedPercent,
+    },
+  };
+}
+
+/** Authenticated admin diagnostics — still avoids secrets / private keys. */
 export function nodeHealthCheck(node: RouteNode) {
   return {
     id: node.id,
@@ -368,18 +449,26 @@ export function nodeHealthCheck(node: RouteNode) {
     endpointConfigured: Boolean(node.endpoint),
     publicKeyConfigured: Boolean(node.publicKey),
     tunnelCidrConfigured: Boolean(node.tunnelCidr),
-    endpoint: node.endpoint || null,
-    publicIp: node.publicIp || null,
     wireguardPort: node.wireguardPort,
-    tunnelCidr: node.tunnelCidr || null,
-    serverTunnelIp: node.serverTunnelIp || null,
     tags: node.tags,
   };
 }
 
+export function effectiveNodeCapacity(maxPeersPerNode: number, headroom: number): number {
+  const max = Math.max(0, Math.floor(maxPeersPerNode));
+  const reserve = Math.max(0, Math.floor(headroom));
+  return Math.max(0, max - reserve);
+}
+
+export function capacityUsedPercent(used: number, effectiveMax: number): number | null {
+  if (!Number.isFinite(effectiveMax) || effectiveMax <= 0) return null;
+  return Math.min(100, Math.max(0, Math.round((used / effectiveMax) * 100)));
+}
+
 export function filterNodesForBetaMode(nodes: RouteNode[], betaMode: "off" | "dallas"): RouteNode[] {
   if (betaMode !== "dallas") return nodes;
+  const naNodeIds = new Set(["dallas-beta", "ashburn-beta", "virginia-beta"]);
   return nodes
-    .filter((node) => node.id === "dallas-beta")
+    .filter((node) => naNodeIds.has(node.id))
     .map((node) => ({ ...node, recommended: true, available: true, status: "online" as const }));
 }

@@ -91,7 +91,7 @@ export function RouteComparisonCard({ report }: RouteComparisonProps) {
 
   return (
     <div className="rounded-xl border border-border bg-card p-4">
-      <h3 className="text-sm font-medium text-white">Normal vs RouteLag</h3>
+      <h3 className="text-sm font-medium text-white">Normal vs Zer0</h3>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <p className="text-xs uppercase text-muted">Normal route</p>
@@ -108,7 +108,7 @@ export function RouteComparisonCard({ report }: RouteComparisonProps) {
           </p>
         </div>
         <div>
-          <p className="text-xs uppercase text-muted">RouteLag route</p>
+          <p className="text-xs uppercase text-muted">Zer0 route</p>
           <p className="mt-1 font-mono text-lg">
             {comparison.tunnel_avg_ping_ms != null
               ? `${Math.round(comparison.tunnel_avg_ping_ms)} ms`

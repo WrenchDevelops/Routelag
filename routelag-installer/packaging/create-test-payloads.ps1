@@ -30,7 +30,8 @@ function New-ZipPayload {
 }
 
 $baseZip = New-ZipPayload "base-app" @{
-    "RouteLag.exe" = "RouteLag test app payload"
+    "Zer0.exe" = "Zer0 test app payload"
+    "RouteLag.exe" = "RouteLag compatibility alias payload"
     "resources\app.txt" = "RouteLag resources"
 }
 $engineZip = New-ZipPayload "engine" @{

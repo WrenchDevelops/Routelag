@@ -42,7 +42,7 @@ export function LogsPage() {
       <div>
         <h1 className="text-2xl font-semibold text-white">Logs</h1>
         <p className="mt-1 text-sm text-muted">
-          Connection events, command errors, and RouteLag Service status.
+          Connection events, command errors, and Zer0 Service status.
         </p>
       </div>
       <div className="min-h-0 flex-1">

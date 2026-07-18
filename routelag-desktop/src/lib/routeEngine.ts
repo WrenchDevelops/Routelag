@@ -1,4 +1,4 @@
-import { api as tauriApi } from "../api";
+﻿import { api as tauriApi } from "../api";
 import type {
   ActiveRouteVerification,
   BetaReportSnapshot,
@@ -12,12 +12,22 @@ import type {
   WireGuardProbeResult,
 } from "../types";
 import {
+  getOrCreateDeviceId,
   getRouteInviteCode,
   getRouteTesterId,
   ROUTELAG_API_URL,
   routeApi,
   type CreateRouteSessionResponse,
 } from "./api";
+import {
+  DEFAULT_HEARTBEAT_INTERVAL_MS,
+  isRouteHeartbeatRunning,
+  resumeRouteHeartbeatIfNeeded,
+  startRouteHeartbeat,
+  stopRouteHeartbeat,
+  type RouteHeartbeatPermanentReason,
+  type RouteHeartbeatPhase,
+} from "./routeHeartbeat";
 
 export interface RouteKeys {
   private_key: string;
@@ -45,6 +55,18 @@ export interface ActiveRouteSession {
 
 export interface RouteLifecycleOptions {
   onState?: (state: OptimizeState) => void;
+  /** Clerk session accessor — required for paid routing entitlement exchange. */
+  getClerkToken?: () => Promise<string | null>;
+  /** Heartbeat phase updates (active / degraded). */
+  onHeartbeatPhase?: (phase: RouteHeartbeatPhase, detail?: string) => void;
+  /**
+   * Permanent heartbeat rejection — caller should safe-disconnect locally.
+   * Heartbeat never recreates a route from this callback.
+   */
+  onHeartbeatPermanentFailure?: (
+    reason: RouteHeartbeatPermanentReason,
+    detail: string,
+  ) => void;
 }
 
 export interface StopOptimizationResult {
@@ -78,12 +100,17 @@ export async function startOptimization(
   return withOperation(async () => {
     const setState = stateReporter(options);
     let route: PreparedRouteSession | null = null;
+    let heartbeatStarted = false;
 
     try {
       setState("preflight");
       await runPreflight(gameId, serverId);
 
-      route = await createAndSaveRouteSession(gameId, serverId, setState);
+      route = await createAndSaveRouteSession(gameId, serverId, setState, {
+        getClerkToken: options.getClerkToken,
+      });
+      beginRouteHeartbeat(route, options);
+      heartbeatStarted = true;
       await logOptimizationStart(serverId, route);
 
       setState("starting_engine");
@@ -104,6 +131,9 @@ export async function startOptimization(
       setState("optimized");
       return route;
     } catch (error) {
+      if (heartbeatStarted || route?.sessionId) {
+        stopRouteHeartbeat("stopped");
+      }
       if (route?.sessionId) {
         setState("rollback");
         await rollbackRouteSession(route.sessionId, error);
@@ -120,6 +150,8 @@ export async function stopOptimization(
   return withOperation(async () => {
     const setState = stateReporter(options);
     setState("stopping");
+    // Stop heartbeats as soon as disconnect starts — before local/API cleanup.
+    stopRouteHeartbeat("stopped");
 
     const warnings: string[] = [];
     const active = await tauriApi.loadActiveRouteSession();
@@ -139,7 +171,7 @@ export async function stopOptimization(
     try {
       const recovery = await tauriApi.forceClearLocalRouteState();
       if (recovery.stale_state_detected) {
-        warnings.push("Local session clear finished, but RouteLag still detects stale route state.");
+        warnings.push("Local session clear finished, but Zer0 still detects stale route state.");
       }
       await updateBetaReportSnapshot({
         optimize_end_time: new Date().toISOString(),
@@ -173,6 +205,7 @@ export async function restoreInternet(
   sessionId?: string | null,
 ): Promise<RestoreInternetResult> {
   return withOperation(async () => {
+    stopRouteHeartbeat("stopped");
     const active = sessionId ? null : await tauriApi.loadActiveRouteSession();
     const result = await tauriApi.restoreInternet();
     const cleanupSessionId = sessionId ?? active?.session_id;
@@ -211,6 +244,9 @@ async function createAndSaveRouteSession(
   gameId: string,
   nodeId: string,
   setState: (state: OptimizeState) => void,
+  entitlement?: {
+    getClerkToken?: () => Promise<string | null>;
+  },
 ): Promise<PreparedRouteSession> {
   setState("creating_server_session");
   const [keys, appVersion] = await Promise.all([
@@ -222,7 +258,22 @@ async function createAndSaveRouteSession(
     keys.public_key,
     appVersion,
     gameId,
+    entitlement,
   );
+
+  void routeApi
+    .syncRoutingSession({
+      sessionId: route.sessionId,
+      nodeId,
+      gameId,
+      serverName: route.serverName,
+      endpoint: route.endpoint,
+      appVersion,
+      active: true,
+      createdAt: new Date().toISOString(),
+      meta: { mtu: route.mtu, allowedIps: route.allowedIps },
+    })
+    .catch(() => undefined);
 
   const routeMode = classifyAllowedIps(route.allowedIps);
   const baseSnapshot = await buildInitialBetaReportSnapshot({
@@ -246,7 +297,7 @@ async function createAndSaveRouteSession(
       optimize_end_time: new Date().toISOString(),
     });
     throw new Error(
-      "Full-route optimization is disabled in this safety build. RouteLag ended the server session before changing your network.",
+      "Full-route optimization is disabled in this safety build. Zer0 ended the server session before changing your network.",
     );
   }
 
@@ -275,7 +326,7 @@ async function createAndSaveRouteSession(
     await cleanupCreatedRouteSession(
       route.sessionId,
       error,
-      "The server route session was created, but RouteLag could not save the local route profile.",
+      "The server route session was created, but Zer0 could not save the local route profile.",
     );
   }
   return { ...route, routeMode };
@@ -302,7 +353,7 @@ async function runPreflight(gameId: string, nodeId: string) {
   });
   if (!health.ok || health.peerMode !== "wg") {
     throw new Error(
-      `RouteLag servers are not ready for safe optimization. Expected peerMode wg, got ${health.peerMode}.`,
+      `Zer0 servers are not ready for safe optimization. Expected peerMode wg, got ${health.peerMode}.`,
     );
   }
 
@@ -315,23 +366,28 @@ async function runPreflight(gameId: string, nodeId: string) {
   ]);
 
   if (!elevated) {
-    throw new Error("Administrator permission is required before RouteLag can optimize.");
+    throw new Error("Administrator permission is required before Zer0 can optimize.");
   }
   if (!engineAvailable) {
-    throw new Error("RouteLag Engine is missing or damaged. Reinstall RouteLag.");
+    throw new Error("Zer0 Engine is missing or damaged. Reinstall Zer0.");
   }
   if (recovery.stale_state_detected) {
     throw new Error(
       "Previous optimization did not close cleanly. Use Restore Internet before starting a new optimization.",
     );
   }
+  if (recovery.active_route_session && recovery.route_service_running) {
+    throw new Error(
+      "Zer0 is already optimized. Open Live Session or End Optimization before starting again.",
+    );
+  }
   if (!ping || ping.packet_loss_pct >= 100) {
     throw new Error(
-      "Normal internet is not reachable. Restore your internet connection before starting RouteLag.",
+      "Normal internet is not reachable. Restore your internet connection before starting Zer0.",
     );
   }
   if (!dnsWorks(dns)) {
-    throw new Error("DNS is not resolving. Restore DNS before starting RouteLag.");
+    throw new Error("DNS is not resolving. Restore DNS before starting Zer0.");
   }
 }
 
@@ -379,7 +435,7 @@ async function verifyConnection(route: PreparedRouteSession) {
     await delay(1500);
   }
 
-  throw new Error(`RouteLag Engine started, but verification failed. ${lastError}`);
+  throw new Error(`Zer0 Engine started, but verification failed. ${lastError}`);
 }
 
 export function gameRoutePolicyLabels(allowedIps: string): string[] {
@@ -481,12 +537,12 @@ async function verifyRoutedReachability(allowedIps: string) {
 }
 
 const PROBE_STEP_DEFS: Array<{ id: WireGuardProbeStepId; label: string }> = [
-  { id: "api_health", label: "RouteLag API health" },
+  { id: "api_health", label: "Zer0 API health" },
   { id: "local_ready", label: "Local engine and permissions" },
   { id: "server_session", label: "WireGuard session on server" },
   { id: "route_policy", label: "Split-route policy" },
   { id: "profile", label: "Local WireGuard profile" },
-  { id: "tunnel", label: "RouteLag Engine tunnel" },
+  { id: "tunnel", label: "Zer0 Engine tunnel" },
   { id: "handshake", label: "WireGuard handshake" },
   { id: "windows_routes", label: "Windows route entries" },
   { id: "routed_ping", label: "Routed target reachability" },
@@ -575,7 +631,7 @@ export async function testWireGuardServer(
         return fail("local_ready", "Administrator permission is required.");
       }
       if (!engineAvailable) {
-        return fail("local_ready", "RouteLag Engine is missing or damaged.");
+        return fail("local_ready", "Zer0 Engine is missing or damaged.");
       }
       if (recovery.stale_state_detected) {
         return fail(
@@ -703,6 +759,7 @@ async function cleanupCreatedRouteSession(
 
 async function rollbackRouteSession(sessionId: string, originalError: unknown) {
   const errors: string[] = [];
+  stopRouteHeartbeat("stopped");
 
   await tauriApi.logClientEvent(
     `rollback start session=${sessionId} reason=${errorText(originalError)}`,
@@ -719,6 +776,15 @@ async function rollbackRouteSession(sessionId: string, originalError: unknown) {
 
   try {
     await routeApi.endRouteSession(sessionId, 5000);
+    void routeApi
+      .syncRoutingSession({
+        sessionId,
+        nodeId: "unknown",
+        active: false,
+        endedAt: new Date().toISOString(),
+        meta: { reason: "rollback_or_end" },
+      })
+      .catch(() => undefined);
   } catch (error) {
     errors.push(`API rollback failed: ${errorText(error)}`);
   }
@@ -726,7 +792,7 @@ async function rollbackRouteSession(sessionId: string, originalError: unknown) {
   try {
     const recovery = await tauriApi.forceClearLocalRouteState();
     if (recovery.stale_state_detected) {
-      errors.push("Local rollback clear finished, but RouteLag still detects stale route state.");
+      errors.push("Local rollback clear finished, but Zer0 still detects stale route state.");
     }
   } catch (error) {
     errors.push(`Local session clear failed: ${errorText(error)}`);
@@ -793,6 +859,87 @@ function dnsWorks(dns: DnsStatus): boolean {
   return dns.results.some((result) => result.host !== "1.1.1.1" && result.resolved);
 }
 
+function beginRouteHeartbeat(
+  route: CreateRouteSessionResponse,
+  options: RouteLifecycleOptions,
+) {
+  const recommendedMinutes =
+    route.expiresAtHint?.recommendedHeartbeatMinutes ?? 5;
+  // Never faster than once per minute; default / typical contract is five minutes.
+  const cadenceMs = Math.max(
+    60_000,
+    Math.round(recommendedMinutes * 60 * 1000),
+  );
+
+  startRouteHeartbeat(route.sessionId, {
+    intervalMs: cadenceMs,
+    deps: buildHeartbeatDeps(route.sessionId, options, cadenceMs),
+  });
+}
+
+function buildHeartbeatDeps(
+  sessionId: string,
+  options: RouteLifecycleOptions,
+  cadenceMs: number,
+) {
+  const deviceId = getOrCreateDeviceId();
+  return {
+    intervalMs: cadenceMs,
+    expectedDeviceId: deviceId,
+    getDeviceId: () => getOrCreateDeviceId(),
+    ensureEntitlement: async (opts?: { force?: boolean }) => {
+      await routeApi.ensureRoutingEntitlement({
+        getClerkToken: options.getClerkToken,
+        force: opts?.force,
+      });
+    },
+    heartbeat: (id: string) => routeApi.heartbeatRouteSession(id),
+    onPhase: (phase: RouteHeartbeatPhase, detail?: string) => {
+      options.onHeartbeatPhase?.(phase, detail);
+      if (phase === "degraded") {
+        options.onState?.("degraded");
+        void tauriApi
+          .logClientEvent(`route_heartbeat_degraded ${detail ?? ""}`)
+          .catch(() => undefined);
+      } else if (phase === "active" && detail?.includes("lastHeartbeatAt")) {
+        options.onState?.("optimized");
+        void tauriApi
+          .logClientEvent(`route_heartbeat_ok session=${sessionId}`)
+          .catch(() => undefined);
+      }
+    },
+    onPermanentFailure: (
+      reason: RouteHeartbeatPermanentReason,
+      detail: string,
+    ) => {
+      options.onHeartbeatPermanentFailure?.(reason, detail);
+      void tauriApi
+        .logClientEvent(`route_heartbeat_permanent reason=${reason} ${detail}`)
+        .catch(() => undefined);
+    },
+  };
+}
+
+/** Resume heartbeat after renderer reload when a local active session remains. */
+export async function resumeRouteHeartbeat(
+  options: RouteLifecycleOptions = {},
+): Promise<boolean> {
+  const active = await tauriApi.loadActiveRouteSession().catch(() => null);
+  if (!active?.session_id) return false;
+  const status = await tauriApi.tunnelStatus().catch(() => null);
+  if (status?.state !== "connected" && status?.state !== "connecting") {
+    return false;
+  }
+  const cadenceMs = DEFAULT_HEARTBEAT_INTERVAL_MS;
+  return resumeRouteHeartbeatIfNeeded(active.session_id, {
+    intervalMs: cadenceMs,
+    deps: buildHeartbeatDeps(active.session_id, options, cadenceMs),
+  });
+}
+
+export { stopRouteHeartbeat, isRouteHeartbeatRunning };
+export type { RouteHeartbeatPermanentReason, RouteHeartbeatPhase };
+
 function stateReporter(options: RouteLifecycleOptions) {
   return (state: OptimizeState) => {
     options.onState?.(state);
@@ -806,7 +953,7 @@ function setNoopState(_state: OptimizeState) {
 
 async function withOperation<T>(fn: () => Promise<T>): Promise<T> {
   if (operationInProgress) {
-    throw new Error("RouteLag is already running a connection operation.");
+    throw new Error("Zer0 is already running a connection operation.");
   }
   operationInProgress = true;
   try {
@@ -821,11 +968,13 @@ function restoreSummary(prefix: string, result: RestoreInternetResult) {
     .filter((item) => !item.ok)
     .map((item) => `${item.step}: ${item.message}`)
     .join("; ");
+  const summary = result.summary?.trim();
+  if (summary) return `${prefix}: ${summary}`;
   return failed ? `${prefix}: ${failed}` : prefix;
 }
 
 function apiUnreachableMessage(error: unknown) {
-  return `RouteLag servers are unreachable. Your internet may be blocking the beta API or the server may be offline. ${errorText(error)}`;
+  return `Zer0 servers are unreachable. Your internet may be blocking the beta API or the server may be offline. ${errorText(error)}`;
 }
 
 function errorText(error: unknown): string {

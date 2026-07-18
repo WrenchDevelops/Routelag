@@ -6,29 +6,50 @@ export function ReadyPage({
   installType,
   selection,
   estimatedSizeBytes,
+  requiresAdmin,
 }: {
   installDir: string;
   installType: import("../lib/installerApi").InstallType;
   selection: ComponentSelection;
   estimatedSizeBytes: number;
+  requiresAdmin: boolean;
 }) {
   const components = [
-    selection.includeApp ? "RouteLag App" : null,
-    selection.includeEngine ? "RouteLag Engine" : null,
-    selection.includeHud ? "RouteLag HUD Runtime" : null,
+    selection.includeApp ? "Zer0 App" : null,
+    selection.includeEngine ? "Zer0 Engine" : null,
+    selection.includeHud ? "Zer0 HUD Runtime" : null,
     selection.includeDesktopShortcut ? "Desktop Shortcut" : null,
     selection.includeStartMenuShortcut ? "Start Menu Shortcut" : null,
   ].filter(Boolean) as string[];
 
   return (
-    <div className="page page-wide">
+    <div className="page page-wide ready-page">
       <h1 className="page-title">Ready to Install</h1>
-      <p className="page-subtitle">Review your setup before installing RouteLag.</p>
+      <p className="page-subtitle">Review your setup before installing Zer0.</p>
+
+      {requiresAdmin ? (
+        <div className="installer-callout installer-callout-warning" role="status">
+          <strong>Administrator permission required.</strong> Installing to Program Files will show
+          a Windows UAC prompt. Approve it to continue. Zer0 routing also needs admin later to
+          start or restore a route session.
+        </div>
+      ) : (
+        <div className="installer-callout" role="status">
+          This location does not require elevation for file copy. Starting Optimization later still
+          needs Windows administrator permission.
+        </div>
+      )}
 
       <div className="ready-summary-card">
-        <div className="ready-summary-section">
-          <span className="ready-summary-label">Installation Type</span>
-          <span className="ready-summary-value">{installTypeLabel(installType)}</span>
+        <div className="ready-summary-meta">
+          <div className="ready-summary-section">
+            <span className="ready-summary-label">Installation Type</span>
+            <span className="ready-summary-value">{installTypeLabel(installType)}</span>
+          </div>
+          <div className="ready-summary-section">
+            <span className="ready-summary-label">Estimated Size</span>
+            <span className="ready-summary-value">{formatEstimatedSize(estimatedSizeBytes)}</span>
+          </div>
         </div>
         <div className="ready-summary-section">
           <span className="ready-summary-label">Install Location</span>
@@ -46,10 +67,6 @@ export function ReadyPage({
               </li>
             ))}
           </ul>
-        </div>
-        <div className="ready-summary-section">
-          <span className="ready-summary-label">Estimated Size</span>
-          <span className="ready-summary-value">{formatEstimatedSize(estimatedSizeBytes)}</span>
         </div>
       </div>
     </div>

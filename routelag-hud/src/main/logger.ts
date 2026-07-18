@@ -4,11 +4,10 @@ import { app } from "electron";
 
 type LogLevel = "info" | "warn" | "error";
 
-const TOKEN_PATTERN = /(token=)[^&\s]+|(--token\s+)\S+/gi;
-
-function logDirectory(): string {
+function logDirectories(): string[] {
   const base = process.env.LOCALAPPDATA ?? app.getPath("userData");
-  return join(base, "RouteLag", "hud", "logs");
+  // Prefer Zer0; mirror to legacy RouteLag so existing support tooling finds logs.
+  return [join(base, "Zer0", "hud", "logs"), join(base, "RouteLag", "hud", "logs")];
 }
 
 function sanitize(message: string): string {
@@ -18,15 +17,18 @@ function sanitize(message: string): string {
 }
 
 function write(level: LogLevel, message: string, meta?: unknown): void {
-  const dir = logDirectory();
-  mkdirSync(dir, { recursive: true });
   const line = JSON.stringify({
     time: new Date().toISOString(),
     level,
     message: sanitize(message),
     meta: meta === undefined ? undefined : sanitize(JSON.stringify(meta))
   });
-  appendFileSync(join(dir, "routelag-hud.log"), `${line}\n`, "utf8");
+  for (const dir of logDirectories()) {
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, "zer0-hud.log"), `${line}\n`, "utf8");
+    // Keep legacy filename for older log collectors.
+    appendFileSync(join(dir, "routelag-hud.log"), `${line}\n`, "utf8");
+  }
 }
 
 export const logger = {

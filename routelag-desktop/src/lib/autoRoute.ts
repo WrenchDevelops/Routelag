@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Auto Route orchestration.
  *
  * Safety rules:
- * - Never auto-starts a RouteLag session; only returns a recommendation.
+ * - Never auto-starts A Zer0 session; only returns a recommendation.
  * - Only probes RouteLag node endpoints (endpointHost from API) — not Fortnite IPs.
  * - Chain routes are always estimate-only and cannot be started.
  * - Uses the same preflight checks as manual optimization.

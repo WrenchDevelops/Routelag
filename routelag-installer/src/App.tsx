@@ -106,6 +106,8 @@ export default function App() {
 
   const [availableSpaceBytes, setAvailableSpaceBytes] = useState<number | null>(null);
 
+  const [requiresAdmin, setRequiresAdmin] = useState(true);
+
 
 
   const [wizardStep, setWizardStep] = useState<WizardStep>("welcome");
@@ -123,6 +125,8 @@ export default function App() {
   const [launchAfterInstall, setLaunchAfterInstall] = useState(true);
 
   const [hudOnlyAcknowledged, setHudOnlyAcknowledged] = useState(false);
+
+  const [welcomeLegalAcknowledged, setWelcomeLegalAcknowledged] = useState(false);
 
   const [openGuide, setOpenGuide] = useState(false);
 
@@ -238,6 +242,14 @@ export default function App() {
 
       .catch(() => setAvailableSpaceBytes(null));
 
+    void installerApi
+
+      .installRequiresAdmin(installDir)
+
+      .then(setRequiresAdmin)
+
+      .catch(() => setRequiresAdmin(true));
+
   }, [installDir]);
 
 
@@ -247,12 +259,6 @@ export default function App() {
     const unlistenPromise = installerApi.onProgress((line) => {
 
       setProgress(line);
-
-      if (line.done && !line.success && line.error) {
-
-        showToast(line.error, "error");
-
-      }
 
     });
 
@@ -362,7 +368,7 @@ export default function App() {
 
       showToast(
 
-        "RouteLag Base App is required to launch and manage the HUD Runtime. Confirm the manual path before continuing.",
+        "Zer0 Base App is required to launch and manage the HUD Runtime. Confirm the manual path before continuing.",
 
         "error",
 
@@ -404,7 +410,7 @@ export default function App() {
 
       void installerApi.launchApp({ installDir }).catch((error) => {
 
-        showToast(`Could not launch RouteLag: ${String(error)}`, "error");
+        showToast(`Could not launch Zer0: ${String(error)}`, "error");
 
       });
 
@@ -492,7 +498,7 @@ export default function App() {
 
       <div className="app-shell">
 
-        <div className="loading-screen">Starting RouteLag Setup…</div>
+        <div className="loading-screen">Starting Zer0 Setup…</div>
 
       </div>
 
@@ -540,9 +546,9 @@ export default function App() {
 
           <ProgressPage
 
-            title="Uninstalling RouteLag"
+            title="Uninstalling Zer0"
 
-            message={progress?.message ?? "Removing RouteLag"}
+            message={progress?.message ?? "Removing Zer0"}
 
             percent={progress?.percent ?? 0}
 
@@ -566,7 +572,7 @@ export default function App() {
 
       >
 
-        <CompletePage title="RouteLag has been removed" subtitle="Uninstall completed successfully." />
+        <CompletePage title="Zer0 has been removed" subtitle="Uninstall completed successfully." />
 
       </InstallerShell>
 
@@ -636,13 +642,13 @@ export default function App() {
 
           title="Installation Complete"
 
-          subtitle="RouteLag HUD Runtime has been installed."
+          subtitle="Zer0 HUD Runtime has been installed."
 
           launchOption={{ checked: launchAfterInstall, onChange: setLaunchAfterInstall }}
 
         >
 
-          <p>You can launch the HUD from inside RouteLag.</p>
+          <p>You can launch the HUD from inside Zer0.</p>
 
         </CompletePage>
 
@@ -662,9 +668,9 @@ export default function App() {
 
         <>
 
-          <p>RouteLag HUD Runtime has been installed.</p>
+          <p>Zer0 HUD Runtime has been installed.</p>
 
-          <p>Open RouteLag to launch and manage the HUD.</p>
+          <p>Open Zer0 to launch and manage the HUD.</p>
 
         </>
 
@@ -678,9 +684,9 @@ export default function App() {
 
         <>
 
-          <p>RouteLag HUD Runtime has been installed.</p>
+          <p>Zer0 HUD Runtime has been installed.</p>
 
-          <p>You can launch the HUD from inside RouteLag.</p>
+          <p>You can launch the HUD from inside Zer0.</p>
 
         </>
 
@@ -690,7 +696,7 @@ export default function App() {
 
     return (
 
-      <p>HUD Runtime was not installed. You can add it later from the HUD page inside RouteLag.</p>
+      <p>HUD Runtime was not installed. You can add it later from the HUD page inside Zer0.</p>
 
     );
 
@@ -704,6 +710,7 @@ export default function App() {
       {...shellProps}
       welcomeLayout={wizardStep === "welcome"}
       installTypeLayout={wizardStep === "installType"}
+      readyLayout={wizardStep === "ready"}
       showStepper={wizardStep !== "installing" && wizardStep !== "complete"}
 
       footer={
@@ -720,6 +727,7 @@ export default function App() {
 
             nextLabel="Next"
             showNextArrow
+            nextDisabled={!welcomeLegalAcknowledged}
 
           />
 
@@ -799,7 +807,12 @@ export default function App() {
 
     >
 
-      {wizardStep === "welcome" && <WelcomePage />}
+      {wizardStep === "welcome" && (
+        <WelcomePage
+          legalAcknowledged={welcomeLegalAcknowledged}
+          onLegalAcknowledgedChange={setWelcomeLegalAcknowledged}
+        />
+      )}
 
 
 
@@ -879,6 +892,8 @@ export default function App() {
 
           estimatedSizeBytes={estimatedSizeBytes}
 
+          requiresAdmin={requiresAdmin}
+
         />
 
       )}
@@ -907,7 +922,7 @@ export default function App() {
 
           title="Installation Complete"
 
-          subtitle="RouteLag has been installed successfully."
+          subtitle="Zer0 has been installed successfully."
 
           launchOption={
 

@@ -83,11 +83,11 @@ export function InstallingPage({
     <div className="installing-page">
       <header className="installing-header">
         <h1 className="installer-title">
-          Installing <span className="text-accent">RouteLag</span>
+          Installing <span className="text-accent">Zer0</span>
         </h1>
         <p className="installer-subtitle">
           {errorMessage
-            ? "Something went wrong while installing RouteLag."
+            ? "Something went wrong while installing Zer0."
             : "Installing your selected components and preparing the app for launch."}
         </p>
       </header>

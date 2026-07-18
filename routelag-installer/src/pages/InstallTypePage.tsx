@@ -57,7 +57,7 @@ export function InstallTypePage({
       <div className="option-grid">
         <OptionCard
           title="Base App Only"
-          description="Installs the RouteLag desktop app for routing and replay features. HUD not included."
+          description="Installs the Zer0 desktop app for routing and replay features. HUD not included."
           icon={<CubeIcon />}
           selected={installType === "baseApp"}
           onSelect={() => onChange("baseApp")}
@@ -66,8 +66,8 @@ export function InstallTypePage({
           title="Full Install"
           description={
             hudAvailable
-              ? "Installs the RouteLag desktop app plus the optional HUD runtime for in-game overlays."
-              : "Installs the RouteLag desktop app. HUD requires the Full installer package."
+              ? "Installs the Zer0 desktop app plus the optional HUD runtime for in-game overlays."
+              : "Installs the Zer0 desktop app. HUD requires the Full installer package."
           }
           icon={<RocketIcon />}
           recommended={hudAvailable}
@@ -79,8 +79,8 @@ export function InstallTypePage({
           title="HUD Only"
           description={
             hudAvailable
-              ? "Installs only the RouteLag HUD runtime. Use this if the main app is already installed."
-              : "Requires the Full installer package and an existing RouteLag install."
+              ? "Installs only the Zer0 HUD runtime. Use this if the main app is already installed."
+              : "Requires the Full installer package and an existing Zer0 install."
           }
           icon={<HudIcon />}
           unavailable={!hudAvailable}
@@ -95,7 +95,7 @@ export function InstallTypePage({
         </span>
         {hudAvailable
           ? "You can change or repair installed components later."
-          : "HUD options need RouteLag-Beta-Full-Setup.exe. This build installs the base app only."}
+          : "HUD options need the Full installer package. This build installs the base app only."}
       </p>
 
       {onCustomize ? (

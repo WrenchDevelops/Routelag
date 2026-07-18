@@ -38,13 +38,13 @@ function App() {
   return (
     <main className="runtime-shell">
       <header>
-        <p>RouteLag HUD</p>
-        <h1>RouteLag HUD Runtime</h1>
+        <p>Zer0 HUD</p>
+        <h1>Zer0 HUD Runtime</h1>
         {devDemo && <span className="demo-pill">DEMO DATA</span>}
       </header>
 
       <section className="status-panel">
-        <StatusRow label="RouteLag Bridge" active={state.bridgeConnected} on="Connected" off="Waiting" />
+        <StatusRow label="Zer0 Bridge" active={state.bridgeConnected} on="Connected" off="Waiting" />
         <StatusRow label="Fortnite" active={state.fortniteDetected} on="Detected" off="Not Detected" />
         <StatusRow label="Overlay" active={state.overlayVisible} on="Visible" off="Hidden" />
         <StatusRow label="Live Data" active={state.liveDataActive} on="Active" off="Waiting" />

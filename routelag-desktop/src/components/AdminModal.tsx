@@ -1,3 +1,5 @@
+﻿import { Shield } from "lucide-react";
+
 interface AdminModalProps {
   open: boolean;
   onClose: () => void;
@@ -14,31 +16,35 @@ export function AdminModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl">
-        <h2 className="text-lg font-semibold text-white">
-          Administrator permission required
-        </h2>
-        <p className="mt-3 text-sm leading-relaxed text-gray-300">
-          RouteLag needs administrator permission to control the RouteLag
-          Engine network route. RouteLag does not modify Fortnite, inject into
-          Fortnite, or interact with anti-cheat.
+    <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="admin-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-modal-title"
+        aria-describedby="admin-modal-desc"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span className="admin-modal-icon" aria-hidden="true">
+          <Shield size={22} strokeWidth={1.8} />
+        </span>
+        <h2 id="admin-modal-title">Administrator permission required</h2>
+        <p id="admin-modal-desc">
+          Zer0 needs administrator permission to control the Zer0 Engine
+          network route. Zer0 does not modify Fortnite, inject into Fortnite,
+          or interact with anti-cheat.
         </p>
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-sm text-gray-200 hover:bg-white/5"
-          >
+        <div className="admin-modal-actions">
+          <button type="button" className="admin-modal-cancel" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
+            className="admin-modal-confirm"
             onClick={onRestartAsAdmin}
             disabled={loading}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
           >
-            {loading ? "Requesting..." : "Restart as Administrator"}
+            {loading ? "Requesting…" : "Restart as Administrator"}
           </button>
         </div>
       </div>

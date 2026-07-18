@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useAuth, useUser } from "@clerk/react";
 import {
   AlertTriangle,
   BarChart3,
@@ -20,6 +21,18 @@ type ReplayRow =
   | { kind: "parsed"; id: string; replay: PathGenReplaySummary };
 
 export function ReplayEnginePage() {
+  const { user } = useUser();
+  const { getToken } = useAuth();
+  const pathGenLoginHint =
+    user?.primaryEmailAddress?.emailAddress ??
+    user?.emailAddresses?.[0]?.emailAddress ??
+    undefined;
+  const pathGenSessionOptions = {
+    inviteCode: pathGenLoginHint,
+    clerkEmail: pathGenLoginHint,
+    clerkUserId: user?.id,
+    getClerkToken: () => getToken(),
+  };
   const [localFiles, setLocalFiles] = useState<LocalReplayFile[]>([]);
   const [jobs, setJobs] = useState<ReplayJob[]>([]);
   const [replays, setReplays] = useState<PathGenReplaySummary[]>([]);
@@ -33,13 +46,20 @@ export function ReplayEnginePage() {
   const [quota, setQuota] = useState<PathGenReplayQuota | null>(null);
   const [deepAnalyzing, setDeepAnalyzing] = useState(false);
   const localPathByHashRef = useRef<Record<string, string>>({});
+  const hashCacheRef = useRef<Record<string, { hash: string; size: number; modified: string }>>({});
   const renamedHashesRef = useRef<Set<string>>(new Set());
+  const renameInFlightRef = useRef<Set<string>>(new Set());
 
   const rows = useMemo<ReplayRow[]>(() => {
     const parsedRows = replays.map((replay) => ({ kind: "parsed" as const, id: replay.id, replay }));
     const parsedJobIds = new Set(replays.map((replay) => replay.jobId));
     const jobRows = jobs
-      .filter((job) => !parsedJobIds.has(job.id))
+      .filter((job) => {
+        if (parsedJobIds.has(job.id)) return false;
+        // Parsed jobs with a replayId should never stay as "analyzing" rows.
+        if (job.status === "parsed" && job.replayId) return false;
+        return true;
+      })
       .map((job) => ({ kind: "job" as const, id: job.id, job }));
     const knownHashes = new Set([
       ...jobs.map((job) => job.fileHash),
@@ -49,13 +69,106 @@ export function ReplayEnginePage() {
       .filter((file) => !file.file_hash || !knownHashes.has(file.file_hash))
       .map((file) => ({ kind: "local" as const, id: file.path, file }));
     const query = search.trim().toLowerCase();
-    const allRows = [...jobRows, ...parsedRows, ...localRows];
+    const allRows = [...parsedRows, ...jobRows, ...localRows];
     if (!query) return allRows;
     return allRows.filter((row) => `${titleFor(row)} ${subtitleFor(row)}`.toLowerCase().includes(query));
-  }, [jobs, localFiles, replays]);
+  }, [jobs, localFiles, replays, search]);
 
   const selected = rows.find((row) => row.id === selectedId) ?? rows[0] ?? null;
-  const activeJobs = jobs.filter((job) => job.status !== "parsed");
+  const activeJobs = jobs.filter((job) => job.status !== "parsed" && job.status !== "failed");
+
+  async function ensureLocalHashes(files: LocalReplayFile[]): Promise<LocalReplayFile[]> {
+    return Promise.all(
+      files.map(async (file) => {
+        const cached = hashCacheRef.current[file.path];
+        if (
+          cached &&
+          cached.size === file.size_bytes &&
+          cached.modified === file.modified_at
+        ) {
+          localPathByHashRef.current[cached.hash] = file.path;
+          return { ...file, file_hash: cached.hash };
+        }
+        if (file.file_hash) {
+          hashCacheRef.current[file.path] = {
+            hash: file.file_hash,
+            size: file.size_bytes,
+            modified: file.modified_at,
+          };
+          localPathByHashRef.current[file.file_hash] = file.path;
+          return file;
+        }
+        try {
+          const hash = await api.hashReplayFile(file.path);
+          hashCacheRef.current[file.path] = {
+            hash,
+            size: file.size_bytes,
+            modified: file.modified_at,
+          };
+          localPathByHashRef.current[hash] = file.path;
+          return { ...file, file_hash: hash };
+        } catch {
+          return file;
+        }
+      }),
+    );
+  }
+
+  function syncNamesFromLocalFiles(
+    nextReplays: PathGenReplaySummary[],
+    nextJobs: ReplayJob[],
+    files: LocalReplayFile[],
+  ) {
+    const nameByHash = new Map<string, string>();
+    for (const file of files) {
+      if (!file.file_hash) continue;
+      nameByHash.set(file.file_hash, file.name);
+      localPathByHashRef.current[file.file_hash] = file.path;
+    }
+    const renamedReplays = nextReplays.map((replay) => {
+      const localName = nameByHash.get(replay.fileHash);
+      if (localName) return { ...replay, fileName: localName };
+      if (replay.status === "parsed") {
+        return { ...replay, fileName: `${parsedReplayFileName(replay)}.replay` };
+      }
+      return replay;
+    });
+    const renamedJobs = nextJobs.map((job) => {
+      const localName = nameByHash.get(job.fileHash);
+      return localName ? { ...job, fileName: localName } : job;
+    });
+    return { replays: renamedReplays, jobs: renamedJobs };
+  }
+
+  function resolveSelectedId(
+    current: string | null,
+    nextReplays: PathGenReplaySummary[],
+    nextJobs: ReplayJob[],
+    nextLocal: LocalReplayFile[],
+  ) {
+    if (current) {
+      const byReplay = nextReplays.find((replay) => replay.id === current);
+      if (byReplay) return byReplay.id;
+      const byJob = nextJobs.find((job) => job.id === current);
+      if (byJob) {
+        if (byJob.status === "parsed" && byJob.replayId) return byJob.replayId;
+        if (byJob.status !== "parsed") return byJob.id;
+        const linked = nextReplays.find((replay) => replay.jobId === byJob.id || replay.fileHash === byJob.fileHash);
+        if (linked) return linked.id;
+      }
+      const byLocal = nextLocal.find((file) => file.path === current);
+      if (byLocal?.file_hash) {
+        const linked = nextReplays.find((replay) => replay.fileHash === byLocal.file_hash);
+        if (linked) return linked.id;
+        const linkedJob = nextJobs.find(
+          (job) => job.fileHash === byLocal.file_hash && job.status !== "parsed",
+        );
+        if (linkedJob) return linkedJob.id;
+      }
+      if (byLocal && nextLocal.some((file) => file.path === current)) return current;
+    }
+    return nextReplays[0]?.id ?? nextJobs.find((job) => job.status !== "parsed")?.id ?? null;
+  }
 
   useEffect(() => {
     void refresh();
@@ -69,24 +182,66 @@ export function ReplayEnginePage() {
     if (!hasActiveJobs && !hasActiveDeep) return undefined;
     const timer = window.setInterval(() => {
       void refresh();
-    }, 90000);
+    }, 15000);
     return () => window.clearInterval(timer);
   }, [jobs, replays]);
 
   useEffect(() => {
     for (const replay of replays) {
-      if (replay.status !== "parsed" || renamedHashesRef.current.has(replay.fileHash)) continue;
+      if (replay.status !== "parsed") continue;
+      if (renamedHashesRef.current.has(replay.fileHash)) continue;
+      if (renameInFlightRef.current.has(replay.fileHash)) continue;
       const sourcePath = localPathByHashRef.current[replay.fileHash];
       if (!sourcePath) continue;
-      renamedHashesRef.current.add(replay.fileHash);
+
       const newName = parsedReplayFileName(replay);
+      const expectedFileName = `${newName}.replay`;
+      const currentBase = fileBaseName(sourcePath);
+      if (currentBase.toLowerCase() === expectedFileName.toLowerCase()) {
+        renamedHashesRef.current.add(replay.fileHash);
+        setReplays((current) =>
+          current.map((item) =>
+            item.fileHash === replay.fileHash ? { ...item, fileName: expectedFileName } : item,
+          ),
+        );
+        continue;
+      }
+
+      renameInFlightRef.current.add(replay.fileHash);
       void api
         .renameParsedReplay(sourcePath, newName)
-        .then(() => {
-          setMessage(`Replay renamed to ${newName}.replay`);
-          void api.scanReplayFolder().then(setLocalFiles).catch(() => undefined);
+        .then(async (newPath) => {
+          renamedHashesRef.current.add(replay.fileHash);
+          localPathByHashRef.current[replay.fileHash] = newPath;
+          const previousCache = hashCacheRef.current[sourcePath];
+          if (previousCache) {
+            delete hashCacheRef.current[sourcePath];
+            hashCacheRef.current[newPath] = previousCache;
+          }
+          setReplays((current) =>
+            current.map((item) =>
+              item.fileHash === replay.fileHash ? { ...item, fileName: expectedFileName } : item,
+            ),
+          );
+          setJobs((current) =>
+            current.map((item) =>
+              item.fileHash === replay.fileHash ? { ...item, fileName: expectedFileName } : item,
+            ),
+          );
+          setLocalFiles((current) =>
+            current.filter((file) => file.path !== sourcePath && file.file_hash !== replay.fileHash),
+          );
+          setMessage(`Replay renamed to ${expectedFileName}`);
+          const scanned = await api.scanReplayFolder().catch(() => [] as LocalReplayFile[]);
+          const withHashes = await ensureLocalHashes(scanned);
+          setLocalFiles(withHashes);
         })
-        .catch(() => undefined);
+        .catch(() => {
+          renamedHashesRef.current.delete(replay.fileHash);
+        })
+        .finally(() => {
+          renameInFlightRef.current.delete(replay.fileHash);
+        });
     }
   }, [replays]);
 
@@ -106,13 +261,13 @@ export function ReplayEnginePage() {
       setMessage(null);
     }
 
+    let nextLocal: LocalReplayFile[] = [];
     setLoading(true);
     try {
-      const nextLocal = await api.scanReplayFolder().catch(() => [] as LocalReplayFile[]);
+      nextLocal = await api.scanReplayFolder().catch(() => [] as LocalReplayFile[]);
+      nextLocal = await ensureLocalHashes(nextLocal);
       setLocalFiles(nextLocal);
-      setSelectedId(
-        (current) => current ?? nextLocal[0]?.path ?? null,
-      );
+      setSelectedId((current) => current ?? nextLocal[0]?.path ?? null);
     } catch (error) {
       setMessage(readError(error));
     } finally {
@@ -121,7 +276,7 @@ export function ReplayEnginePage() {
 
     setSyncingRemote(true);
     try {
-      const sessionReady = await ensurePathGenSession();
+      const sessionReady = await ensurePathGenSession(pathGenSessionOptions);
       if (!sessionReady) {
         setJobs([]);
         setReplays([]);
@@ -159,23 +314,46 @@ export function ReplayEnginePage() {
             : job,
         ),
       );
-      let nextReplays = await routeApi.getParsedReplays().catch((error) => {
-        setMessage(readError(error));
-        return [] as PathGenReplaySummary[];
-      });
-      if (nextJobs.some((job) => job.status === "parsed") && !nextReplays.length) {
-        nextReplays = await routeApi.getParsedReplays().catch(() => [] as PathGenReplaySummary[]);
-      }
-      setJobs(nextJobs as ReplayJob[]);
-      setReplays(nextReplays as PathGenReplaySummary[]);
-      setQuota(nextQuota);
-      setSelectedId(
-        (current) =>
-          current ??
-          nextReplays[0]?.id ??
-          nextJobs[0]?.id ??
-          null,
+
+      const newlyParsed = nextJobs.filter(
+        (job) => job.status === "parsed" && Boolean(job.replayId),
       );
+      // Always refresh the replay library after any job finishes parsing.
+      if (newlyParsed.length > 0) {
+        nextReplays = await routeApi.getParsedReplays().catch(() => nextReplays);
+        // Fill any race where the list is still missing the new match id.
+        for (const job of newlyParsed) {
+          if (!job.replayId) continue;
+          if (nextReplays.some((replay) => replay.id === job.replayId || replay.jobId === job.id)) {
+            continue;
+          }
+          try {
+            const detail = await routeApi.getParsedReplay(job.replayId);
+            nextReplays = [detail.summary, ...nextReplays];
+          } catch {
+            // Keep going; the next poll will pick it up.
+          }
+        }
+        const withStats = nextReplays.find(
+          (replay) =>
+            newlyParsed.some((job) => job.replayId === replay.id || job.id === replay.jobId) &&
+            (replay.placement != null || replay.eliminations != null || replay.damageDealt != null),
+        );
+        if (withStats) {
+          setMessage(
+            `Parsed ${withStats.fileName}: Place ${withStats.placement ?? "—"} · Elims ${withStats.eliminations ?? "—"} · Damage ${withStats.damageDealt ?? "—"}`,
+          );
+        }
+      }
+
+      // Re-hash after remote sync so local files can be matched to cloud hashes.
+      nextLocal = await ensureLocalHashes(nextLocal);
+      const synced = syncNamesFromLocalFiles(nextReplays, nextJobs as ReplayJob[], nextLocal);
+      setLocalFiles(nextLocal);
+      setJobs(synced.jobs);
+      setReplays(synced.replays);
+      setQuota(nextQuota);
+      setSelectedId((current) => resolveSelectedId(current, synced.replays, synced.jobs, nextLocal));
     } finally {
       setSyncingRemote(false);
     }
@@ -186,9 +364,9 @@ export function ReplayEnginePage() {
     try {
       // Folder picker opens in the Fortnite Demos directory by default.
       const folder = await api.selectReplayFolder();
-      const files = await api.scanReplayFolder(folder);
+      const files = await ensureLocalHashes(await api.scanReplayFolder(folder));
       setLocalFiles(files);
-      setSelectedId((current) => current ?? files[0]?.path ?? null);
+      setSelectedId((current) => resolveSelectedId(current, replays, jobs, files) ?? files[0]?.path ?? null);
     } catch (error) {
       setMessage(readError(error));
     }
@@ -197,9 +375,9 @@ export function ReplayEnginePage() {
   async function scanDefaultReplayFolder() {
     setMessage(null);
     try {
-      const files = await api.scanReplayFolder();
+      const files = await ensureLocalHashes(await api.scanReplayFolder());
       setLocalFiles(files);
-      setSelectedId((current) => current ?? files[0]?.path ?? null);
+      setSelectedId((current) => resolveSelectedId(current, replays, jobs, files) ?? files[0]?.path ?? null);
       if (!files.length) {
         setMessage("No .replay files found in your Fortnite Demos folder.");
       }
@@ -213,6 +391,12 @@ export function ReplayEnginePage() {
     try {
       const file = await api.importReplayFile();
       const withHash = { ...file, file_hash: await api.hashReplayFile(file.path) };
+      hashCacheRef.current[withHash.path] = {
+        hash: withHash.file_hash,
+        size: withHash.size_bytes,
+        modified: withHash.modified_at,
+      };
+      localPathByHashRef.current[withHash.file_hash] = withHash.path;
       setLocalFiles((current) => [withHash, ...current.filter((item) => item.path !== withHash.path)]);
       setSelectedId(withHash.path);
       await uploadLocalReplay(withHash);
@@ -224,7 +408,7 @@ export function ReplayEnginePage() {
   async function uploadLocalReplay(file: LocalReplayFile) {
     setUploading(true);
     setMessage("Uploading replay to PathGen...");
-    const ready = await ensurePathGenSession();
+    const ready = await ensurePathGenSession(pathGenSessionOptions);
     const token = getPathGenToken();
     if (!ready || !token) {
       setUploading(false);
@@ -267,21 +451,23 @@ export function ReplayEnginePage() {
   }
 
   async function retryFailedJob(job: ReplayJob) {
-    setMessage("Checking replay parse status...");
+    setMessage("Retrying PathGen parse...");
     try {
-      const next = await routeApi.getReplayJob(job.id, { sync: true });
+      const next = await routeApi.retryReplayJob(job.id);
       setJobs((current) => [next as ReplayJob, ...current.filter((item) => item.id !== next.id)]);
-      setSelectedId(next.id);
       if (next.status === "parsed" && next.replayId) {
+        setSelectedId(next.replayId);
         setMessage("Replay parsed successfully.");
         await refresh();
         return;
       }
+      setSelectedId(next.id);
       if (next.status === "failed") {
         setMessage(next.errorMessage ?? "Replay failed to parse. Try uploading the file again.");
         return;
       }
-      setMessage("PathGen is still analyzing this replay.");
+      setMessage("PathGen is analyzing this replay again.");
+      await refresh();
     } catch (error) {
       setMessage(readError(error));
     }
@@ -323,7 +509,7 @@ export function ReplayEnginePage() {
 
   return (
     <main className="replay-engine-main">
-      <header className="replay-header">
+      <header className="replay-header replay-engine-header">
         <div>
           <div className="replay-title-row">
             <h1>PathGen Replay Engine</h1>
@@ -454,7 +640,7 @@ function ReplaySummary({
       <div className="replay-selected-state">
         <div className="replay-selected-state-card">
           <span className="replay-state-icon replay-state-icon-large">
-            <Upload size={28} strokeWidth={2.1} aria-hidden />
+            <Upload size={28} strokeWidth={1.75} aria-hidden />
           </span>
           <div className="replay-selected-state-copy">
             <h2 title={row.file.name}>{row.file.name}</h2>
@@ -480,9 +666,9 @@ function ReplaySummary({
         <div className={`replay-selected-state-card${failed ? " is-failed" : ""}`}>
           <span className={`replay-state-icon replay-state-icon-large ${failed ? "failed" : ""}`}>
             {failed ? (
-              <AlertTriangle size={28} strokeWidth={2.1} aria-hidden />
+              <AlertTriangle size={28} strokeWidth={1.75} aria-hidden />
             ) : (
-              <BarChart3 size={28} strokeWidth={2.1} aria-hidden />
+              <BarChart3 size={28} strokeWidth={1.75} aria-hidden />
             )}
           </span>
           <div className="replay-selected-state-copy">
@@ -521,9 +707,13 @@ function ReplaySummary({
         <img src={replay.thumbnailUrl ?? "/games/fortnite.jpg"} alt="" />
         <div>
           <h2>PathGen Match Summary</h2>
-          <strong>{friendlyModeLabel(replay.mode ?? replay.playlist) ?? replay.fileName}</strong>
+          <strong>{replay.fileName}</strong>
           <span>{dateLabel(replay.startedAt ?? replay.parsedAt ?? replay.createdAt)}</span>
-          <small>{replay.region ?? "--"} · Fortnite</small>
+          <small>
+            {[friendlyModeLabel(replay.mode ?? replay.playlist), replay.region ?? null, "Fortnite"]
+              .filter(Boolean)
+              .join(" · ")}
+          </small>
         </div>
       </div>
 
@@ -675,7 +865,7 @@ function UploadQueue({ jobs }: { jobs: ReplayJob[] }) {
     <div className="replay-upload-queue">
       <div className="replay-section-label">
         <strong>
-          <Upload size={14} strokeWidth={2.2} aria-hidden />
+          <Upload size={14} strokeWidth={1.75} aria-hidden />
           Upload Queue
         </strong>
         <span>{jobs.length ? `${jobs.length} active` : "No active uploads"}</span>
@@ -737,9 +927,9 @@ function PathGenOnboarding({
 
       <div className="parser-status-card">
         <h3>Parser Status</h3>
-        <StatusRow icon={<BarChart3 size={15} strokeWidth={2.2} aria-hidden />} label="PathGen" value="Ready" tone="ready" />
-        <StatusRow icon={<CloudUpload size={15} strokeWidth={2.2} aria-hidden />} label="Replay uploads" value="Waiting" />
-        <StatusRow icon={<Clock3 size={15} strokeWidth={2.2} aria-hidden />} label="Last analysis" value="None yet" />
+        <StatusRow icon={<BarChart3 size={15} strokeWidth={1.75} aria-hidden />} label="PathGen" value="Ready" tone="ready" />
+        <StatusRow icon={<CloudUpload size={15} strokeWidth={1.75} aria-hidden />} label="Replay uploads" value="Waiting" />
+        <StatusRow icon={<Clock3 size={15} strokeWidth={1.75} aria-hidden />} label="Last analysis" value="None yet" />
       </div>
     </div>
   );
@@ -793,7 +983,7 @@ function ReplayToolbarButton({
       className={`replay-toolbar-btn replay-toolbar-btn--${variant}`}
       onClick={onClick}
     >
-      <Icon size={17} strokeWidth={2.2} aria-hidden />
+      <Icon size={17} strokeWidth={1.75} aria-hidden />
       <span>{children}</span>
     </button>
   );
@@ -813,13 +1003,14 @@ function mergeReplaySummary(
   detailSummary?: PathGenReplaySummary | null,
 ): PathGenReplaySummary {
   if (!detailSummary) return summary;
-  return { ...summary, ...detailSummary };
+  // Prefer the library display name (local rename) over the original upload name from the server.
+  return { ...summary, ...detailSummary, fileName: summary.fileName || detailSummary.fileName };
 }
 
 function titleFor(row: ReplayRow) {
   if (row.kind === "local") return row.file.name;
   if (row.kind === "job") return row.job.fileName;
-  return row.replay.mode ?? row.replay.playlist ?? row.replay.fileName;
+  return row.replay.fileName;
 }
 
 function subtitleFor(row: ReplayRow) {
@@ -845,7 +1036,8 @@ function durationFor(row: ReplayRow) {
 }
 
 function numberValue(value: number | null | undefined) {
-  return value == null ? "--" : value.toLocaleString();
+  if (value == null) return "--";
+  return Math.round(value).toLocaleString();
 }
 
 function durationValue(seconds: number | null | undefined) {
@@ -855,12 +1047,25 @@ function durationValue(seconds: number | null | undefined) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function dateLabel(value: string | number | null | undefined) {
-  if (value == null) return "--";
+/** Osirion often returns microsecond epoch timestamps — normalize before Date(). */
+function coerceDate(value: string | number | null | undefined): Date | null {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    let ms = value;
+    if (value > 1e14) ms = Math.round(value / 1000);
+    else if (value < 1e11) ms = Math.round(value * 1000);
+    const date = new Date(ms);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (/^\d+$/.test(value.trim())) return coerceDate(Number(value));
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "--"
-    : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateLabel(value: string | number | null | undefined) {
+  const date = coerceDate(value);
+  if (!date) return "--";
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function friendlyModeLabel(mode: string | null | undefined) {
@@ -872,6 +1077,12 @@ function friendlyModeLabel(mode: string | null | undefined) {
     .trim();
 }
 
+function fileBaseName(path: string) {
+  const normalized = path.replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] ?? path;
+}
+
 function parsedReplayFileName(replay: PathGenReplaySummary) {
   const place = replay.placement != null ? `P${replay.placement}` : "P--";
   const mode = (friendlyModeLabel(replay.mode ?? replay.playlist) ?? "Match").replace(/\s+/g, "");
@@ -881,8 +1092,7 @@ function parsedReplayFileName(replay: PathGenReplaySummary) {
 }
 
 function formatReplayDate(value: string | number | null | undefined) {
-  const date = value == null ? new Date() : new Date(value);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
+  const date = coerceDate(value) ?? new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -892,11 +1102,12 @@ function formatReplayDate(value: string | number | null | undefined) {
 function statusLabel(status: string) {
   switch (status) {
     case "uploading":
-      return "Uploading replay...";
+      return "Uploading replay to PathGen...";
     case "uploaded":
+      return "Upload complete — starting analysis.";
     case "osirion_pending":
     case "fetching_match_data":
-      return "PathGen is analyzing this replay.";
+      return "Fetching match data. This usually takes a minute.";
     case "parsed":
       return "Parsed";
     case "failed":

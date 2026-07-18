@@ -124,6 +124,9 @@ export const installerApi = {
 
   defaultInstallDir: () => invoke<string>("default_install_dir"),
 
+  installRequiresAdmin: (installDir: string) =>
+    invoke<boolean>("install_requires_admin", { installDir }),
+
   browseInstallDir: (current: string) => invoke<string | null>("browse_install_dir", { current }),
 
   getDiskSpace: (path: string) => invoke<number>("get_disk_space", { path }),

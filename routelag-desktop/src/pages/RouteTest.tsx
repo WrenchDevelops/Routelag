@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 
 import { api } from "../api";
 import { PingCard } from "../components/PingCard";
@@ -10,21 +10,21 @@ export function RouteTestPage() {
   const { showToast } = useToast();
   const [latest, setLatest] = useState<RouteTestResult | null>(null);
   const [status, setStatus] = useState<TunnelStatus>(defaultTunnelStatus());
-  const [busy, setBusy] = useState<"normal" | "routelag" | null>(null);
+  const [busy, setBusy] = useState<"normal" | "Zer0" | null>(null);
 
   useEffect(() => {
     void api.loadRouteTest().then(setLatest);
     void api.tunnelStatus().then(setStatus);
   }, []);
 
-  const runTest = async (mode: "normal" | "routelag") => {
+  const runTest = async (mode: "normal" | "Zer0") => {
     setBusy(mode);
     try {
       const result = await api.runRouteTest(mode);
       setLatest(result);
       setStatus(await api.tunnelStatus());
       showToast(
-        `${mode === "normal" ? "Normal" : "RouteLag"} route test saved.`,
+        `${mode === "normal" ? "Normal" : "Zer0"} route test saved.`,
         "success",
       );
     } catch (e) {
@@ -39,7 +39,7 @@ export function RouteTestPage() {
       <div>
         <h1 className="text-2xl font-semibold text-white">Route Test</h1>
         <p className="mt-1 text-sm text-muted">
-          Compare your normal internet path vs the RouteLag tunnel.
+          Compare your normal internet path vs The Zer0 tunnel.
         </p>
       </div>
 
@@ -60,13 +60,13 @@ export function RouteTestPage() {
         </button>
         <button
           type="button"
-          onClick={() => void runTest("routelag")}
+          onClick={() => void runTest("Zer0")}
           disabled={busy !== null || status.state !== "connected"}
           className="rounded-xl bg-card border border-border px-4 py-4 text-left hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <p className="font-medium text-white">Test RouteLag Route</p>
+          <p className="font-medium text-white">Test Zer0 Route</p>
           <p className="mt-1 text-sm text-muted">Tunnel must be connected</p>
-          {busy === "routelag" && (
+          {busy === "Zer0" && (
             <p className="mt-2 text-xs text-accent cursor-wait">Running...</p>
           )}
         </button>
@@ -76,7 +76,7 @@ export function RouteTestPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <PingCard
             title="Latest test"
-            value={latest.mode === "routelag" ? "RouteLag route" : "Normal route"}
+            value={latest.mode === "Zer0" ? "Zer0 route" : "Normal route"}
             subtitle={new Date(latest.tested_at).toLocaleString()}
           />
           <PingCard

@@ -13,7 +13,7 @@ fn write_lnk(target: &Path, lnk_path: &Path) -> Result<(), String> {
 }
 
 pub fn create_desktop_shortcut(app_exe: &Path, desktop_dir: &Path) -> Result<(), String> {
-    write_lnk(app_exe, &desktop_dir.join("RouteLag.lnk"))
+    write_lnk(app_exe, &desktop_dir.join("Zer0.lnk"))
 }
 
 pub fn create_start_menu_shortcuts(
@@ -21,16 +21,26 @@ pub fn create_start_menu_shortcuts(
     uninstall_exe: &Path,
     start_menu_dir: &Path,
 ) -> Result<(), String> {
-    let folder = start_menu_dir.join("RouteLag");
-    write_lnk(app_exe, &folder.join("RouteLag.lnk"))?;
-    write_lnk(uninstall_exe, &folder.join("Uninstall RouteLag.lnk"))
+    let folder = start_menu_dir.join("Zer0");
+    write_lnk(app_exe, &folder.join("Zer0.lnk"))?;
+    write_lnk(uninstall_exe, &folder.join("Uninstall Zer0.lnk"))
 }
 
 pub fn remove_shortcuts(desktop_dir: &Path, start_menu_dir: &Path) {
-    let _ = std::fs::remove_file(desktop_dir.join("RouteLag.lnk"));
-    let folder = start_menu_dir.join("RouteLag");
-    let _ = std::fs::remove_file(folder.join("RouteLag Beta.lnk"));
-    let _ = std::fs::remove_file(folder.join("RouteLag.lnk"));
-    let _ = std::fs::remove_file(folder.join("Uninstall RouteLag.lnk"));
-    let _ = std::fs::remove_dir(&folder);
+    for name in ["Zer0.lnk", "RouteLag.lnk"] {
+        let _ = std::fs::remove_file(desktop_dir.join(name));
+    }
+    for folder_name in ["Zer0", "RouteLag"] {
+        let folder = start_menu_dir.join(folder_name);
+        for name in [
+            "Zer0.lnk",
+            "Uninstall Zer0.lnk",
+            "RouteLag.lnk",
+            "RouteLag Beta.lnk",
+            "Uninstall RouteLag.lnk",
+        ] {
+            let _ = std::fs::remove_file(folder.join(name));
+        }
+        let _ = std::fs::remove_dir(&folder);
+    }
 }

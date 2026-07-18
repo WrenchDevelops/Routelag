@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum Job {
     /// Fresh install or reinstall of the selected components into `install_dir`.
     Install(InstallJob),
-    /// Add just the HUD Runtime component to an already-installed RouteLag.
+    /// Add just the HUD Runtime component to an already-installed Zer0.
     AddHud(AddHudJob),
     /// Remove an existing install.
     Uninstall(UninstallJob),

@@ -4,9 +4,12 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::cleanup;
 use crate::config::{self, redact_secrets};
 use crate::elevation;
+use crate::logs::LogManager;
 use crate::route_lag_engine::{self, RouteLagEngine, RouteLagEngineError, ENGINE_MISSING_MESSAGE};
+use crate::route_session;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TunnelStatus {
@@ -57,7 +60,7 @@ pub enum TunnelError {
     #[error("{ENGINE_MISSING_MESSAGE}")]
     EngineMissing,
     #[error(
-        "RouteLag needs administrator permission to control the RouteLag Engine route session."
+        "Zer0 needs administrator permission to control the Zer0 Engine route session."
     )]
     NotElevated,
     #[error("No RouteLag route profile is ready. Start Optimization to create a route session.")]
@@ -124,10 +127,15 @@ pub fn tunnel_status() -> TunnelStatus {
     }
 }
 
-pub fn connect_tunnel(app_data_dir: &Path, engine: &RouteLagEngine) -> Result<(), TunnelError> {
+pub fn connect_tunnel(
+    app_data_dir: &Path,
+    engine: &RouteLagEngine,
+    logs: &LogManager,
+) -> Result<(), TunnelError> {
     #[cfg(not(windows))]
     {
         let _ = app_data_dir;
+        let _ = logs;
         return Err(TunnelError::UnsupportedPlatform);
     }
 
@@ -144,23 +152,29 @@ pub fn connect_tunnel(app_data_dir: &Path, engine: &RouteLagEngine) -> Result<()
         }
 
         let config_path = config::config_path(app_data_dir);
-        let config_str = config_path.to_string_lossy().to_string();
+        let session_id = route_session::load_active_route_session(app_data_dir)
+            .map(|session| session.session_id);
+
+        // Persist last-known-active before installing so crash recovery can detect leftovers.
+        cleanup::mark_routing_active(app_data_dir, session_id.as_deref(), "connect", logs);
 
         let status = tunnel_status();
         if status.is_connected() || status.is_connecting() {
             return Ok(());
         }
 
-        let _ = config_str;
         engine.install_route_profile(&config_path)?;
 
         Ok(())
     }
 }
 
+/// Idempotent disconnect of the primary owned tunnel profile.
+/// Prefer [`cleanup::restore_internet`] / [`cleanup::safe_shutdown_routing`] for full recovery.
 pub fn disconnect_tunnel(engine: &RouteLagEngine) -> Result<(), TunnelError> {
     #[cfg(not(windows))]
     {
+        let _ = engine;
         return Err(TunnelError::UnsupportedPlatform);
     }
 
@@ -169,13 +183,18 @@ pub fn disconnect_tunnel(engine: &RouteLagEngine) -> Result<(), TunnelError> {
         if !elevation::is_elevated() {
             return Err(TunnelError::NotElevated);
         }
-        if !engine.is_available() {
-            return Err(TunnelError::EngineMissing);
-        }
 
         let status = tunnel_status();
         if status.state == "disconnected" {
+            // Still attempt uninstall — idempotent for already-removed tunnels.
+            if engine.is_available() {
+                let _ = engine.uninstall_route_profile(&config::TUNNEL_NAME);
+            }
             return Ok(());
+        }
+
+        if !engine.is_available() {
+            return Err(TunnelError::EngineMissing);
         }
 
         engine.uninstall_route_profile(&config::TUNNEL_NAME)?;
@@ -312,10 +331,14 @@ pub fn wait_for_handshake(engine: &RouteLagEngine, timeout: Duration) -> bool {
     tunnel_status().is_connected()
 }
 
-pub fn reconnect_tunnel(app_data_dir: &Path, engine: &RouteLagEngine) -> Result<(), TunnelError> {
+pub fn reconnect_tunnel(
+    app_data_dir: &Path,
+    engine: &RouteLagEngine,
+    logs: &LogManager,
+) -> Result<(), TunnelError> {
     disconnect_tunnel(engine)?;
     std::thread::sleep(Duration::from_secs(2));
-    connect_tunnel(app_data_dir, engine)?;
+    connect_tunnel(app_data_dir, engine, logs)?;
     wait_for_handshake(engine, Duration::from_secs(30));
     Ok(())
 }

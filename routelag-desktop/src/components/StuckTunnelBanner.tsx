@@ -37,7 +37,7 @@ export function StuckTunnelBanner({
           disabled={busy}
           className="rounded-lg border border-border px-4 py-2 text-sm text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Disconnect RouteLag
+          Disconnect Zer0
         </button>
         <button
           type="button"

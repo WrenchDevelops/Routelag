@@ -11,19 +11,27 @@ export function UninstallConfirmPage({
 }) {
   return (
     <div className="page">
-      <h1 className="page-title">Uninstall RouteLag</h1>
+      <h1 className="page-title">Uninstall Zer0</h1>
       <p className="page-subtitle">
-        RouteLag and its components will be removed from <strong>{installPath}</strong>.
+        Zer0 and its components will be removed from <strong>{installPath}</strong>.
       </p>
+      <div className="installer-callout" role="note">
+        Uninstall disconnects Zer0/RouteLag owned tunnel services only, then removes Zer0 program
+        files. It does <strong>not</strong> uninstall WireGuard for Windows or any other VPN
+        product.
+      </div>
       <div className="checkbox-list">
         <CheckboxRow
-          title="Remove RouteLag user data, settings, and logs"
-          description="Includes data stored in %LOCALAPPDATA%\RouteLag. Unchecked by default — your data is kept."
+          title="Remove Zer0 user data, settings, and logs"
+          description="Includes %LOCALAPPDATA%\Zer0 and legacy %LOCALAPPDATA%\RouteLag, plus matching Roaming folders. Unchecked by default — settings and logs are kept for reinstall."
           checked={removeUserData}
           onChange={onRemoveUserDataChange}
         />
       </div>
-      <p className="page-note">Your route configurations and relay settings will not be affected unless selected above.</p>
+      <p className="page-note">
+        Default uninstall removes the application, engine, HUD runtime, shortcuts, and ARP entry.
+        User data is preserved unless you check the box above.
+      </p>
     </div>
   );
 }

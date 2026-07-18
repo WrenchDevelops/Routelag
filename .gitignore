@@ -5,6 +5,11 @@ clients/*.conf
 *.zip
 *.tar
 *.tar.gz
+*.tgz
+
+# Root-only local dependencies and separately versioned companion checkout
+/node_modules/
+/pathgen-server/
 
 # Secrets and local env
 .env
@@ -43,3 +48,9 @@ routelag-hud/build/
 pathgen-server/node_modules/
 pathgen-server/dist/
 pathgen-server/data/
+pathgen-server/secrets/
+
+# Firebase Admin SDK credentials (never commit)
+**/firebase-adminsdk*.json
+**/serviceAccount*.json
+*-firebase-adminsdk-*.json

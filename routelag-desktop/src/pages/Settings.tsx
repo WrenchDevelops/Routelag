@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 
 import { api } from "../api";
 import { AdminModal } from "../components/AdminModal";
@@ -61,7 +61,7 @@ export function SettingsPage() {
   };
 
   const handleRemove = async () => {
-    if (!confirm("Remove the imported RouteLag route profile?")) return;
+    if (!confirm("Remove the imported Zer0 route profile?")) return;
     setBusy(true);
     try {
       await api.removeConfig();
@@ -77,7 +77,7 @@ export function SettingsPage() {
   const handleReset = async () => {
     if (
       !confirm(
-        "Reset RouteLag Beta? This removes your config, logs, and saved test results. Your tester profile is kept.",
+        "Reset Zer0? This removes your config, logs, and saved test results. Your tester profile is kept.",
       )
     ) {
       return;
@@ -110,7 +110,7 @@ export function SettingsPage() {
   const handleRestoreInternet = () => {
     if (
       !confirm(
-        "Restore Internet? This stops the RouteLag tunnel, uninstalls its route service, and flushes DNS. RouteLag stays installed.",
+        "Restore Internet? This stops The Zer0 tunnel, uninstalls its route service, and flushes DNS. Zer0 stays installed.",
       )
     ) {
       return;
@@ -146,7 +146,7 @@ export function SettingsPage() {
       </div>
 
       <section className="rounded-xl border border-border bg-card p-4">
-        <h2 className="text-sm font-medium text-white">RouteLag route profile</h2>
+        <h2 className="text-sm font-medium text-white">Zer0 route profile</h2>
         <p className="mt-1 text-sm text-muted">
           Status: {hasConfig ? "Imported" : "Not imported"}
         </p>
@@ -249,7 +249,7 @@ export function SettingsPage() {
       <section className="rounded-xl border border-error/30 bg-card p-4">
         <h2 className="text-sm font-medium text-white">Recovery</h2>
         <p className="mt-1 text-sm text-muted">
-          Stop the tunnel and restore normal internet without uninstalling RouteLag.
+          Stop the tunnel and restore normal internet without uninstalling Zer0.
         </p>
         <div className="mt-4">
           <button

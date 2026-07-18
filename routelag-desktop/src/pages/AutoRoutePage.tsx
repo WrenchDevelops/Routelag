@@ -55,7 +55,7 @@ export function AutoRoutePage({
         <div className="auto-route-status">
           <div className="auto-route-spinner" />
           <p className="auto-route-status-text">
-            {state === "probing" ? "Probing RouteLag nodes…" : "Ranking routes…"}
+            {state === "probing" ? "Probing Zer0 nodes…" : "Ranking routes…"}
           </p>
           <p className="auto-route-status-sub">This takes a few seconds.</p>
         </div>
@@ -138,7 +138,7 @@ function RecommendationCard({ result }: { result: AutoTestResponse }) {
     <div className={`auto-route-rec-card ${isDirect ? "auto-route-rec-direct" : "auto-route-rec-routelag"}`}>
       <p className="auto-route-rec-label">Recommended route</p>
       <p className="auto-route-rec-name">
-        {isDirect ? "Direct (RouteLag OFF)" : recommended.candidate.label}
+        {isDirect ? "Direct (Zer0 OFF)" : recommended.candidate.label}
       </p>
       <p className="auto-route-rec-score">
         Score: {recommended.score.toFixed(0)}

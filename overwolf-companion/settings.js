@@ -6,11 +6,12 @@ async function refreshPairing() {
   try {
     const payload = await RouteLagBridge.pairWithRouteLag();
     const token = payload.token || RouteLagBridge.getStoredToken();
-    status.textContent = "Connected to RouteLag desktop.";
+    status.textContent = "Connected to Zer0 desktop (optional layout sync).";
     preview.textContent = `Token: ${token.slice(0, 8)}...${token.slice(-6)}`;
   } catch {
     const token = RouteLagBridge.getStoredToken();
-    status.textContent = "RouteLag desktop not reachable. Open RouteLag and try again.";
+    status.textContent =
+      "Zer0 desktop not reachable. HUD still runs independently — open Zer0 only if you want layout sync.";
     preview.textContent = token
       ? `Token: ${token.slice(0, 8)}...${token.slice(-6)} (cached)`
       : "Token: not paired";

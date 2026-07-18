@@ -12,7 +12,7 @@ export class WindowManager {
       height: 520,
       minWidth: 360,
       minHeight: 420,
-      title: "RouteLag HUD Runtime",
+      title: "Zer0 HUD Runtime",
       backgroundColor: "#101016",
       autoHideMenuBar: true,
       webPreferences: {

@@ -90,7 +90,7 @@ export class OverlayManager {
       this.api.on("game-launched", (event: GameLaunchEvent, gameInfo: GameInfo) => {
         if (!this.isFortnite(gameInfo)) return;
         if (gameInfo.processInfo?.isElevated) {
-          logger.warn("Fortnite is elevated — run RouteLag HUD as administrator");
+          logger.warn("Fortnite is elevated — run Zer0 HUD as administrator");
           return;
         }
         logger.info("Fortnite launched — injecting overlay");

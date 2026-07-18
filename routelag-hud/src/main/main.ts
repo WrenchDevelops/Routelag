@@ -13,7 +13,7 @@ import { ensureOverwolfPackagesBootstrapped } from "./packageBootstrap.js";
 const cli = parseCli();
 
 if (cli.showVersion || app.commandLine.hasSwitch("version")) {
-  process.stdout.write(`RouteLag HUD Runtime ${HUD_VERSION}\n`);
+  process.stdout.write(`Zer0 HUD Runtime ${HUD_VERSION}\n`);
   process.exit(0);
 }
 
@@ -96,7 +96,7 @@ app.on("second-instance", (_event, argv, _workingDirectory, additionalData) => {
 
 app.whenReady().then(async () => {
   await ensureOverwolfPackagesBootstrapped();
-  logger.info("RouteLag HUD Runtime starting");
+  logger.info("Zer0 HUD Runtime starting");
   overlayManager.setFortniteDetectedHandler(() => {
     fortniteGep.markFortniteDetected();
     broadcastState();

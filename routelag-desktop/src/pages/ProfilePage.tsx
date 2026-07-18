@@ -1,4 +1,4 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
+﻿import { openExternalUrl } from "../lib/openExternalUrl";
 import {
   Camera,
   Check,
@@ -18,7 +18,9 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import defaultAvatar from "../assets/default-avatar.svg";
 import { GlowButton } from "../components/GlowButton";
 import { useToast } from "../components/Toast";
+import { useEntitlements } from "../lib/billing";
 import { readImageFileAsAvatar } from "../lib/profileAvatar";
+import { PLANS_URL } from "../lib/supportUrls";
 import type { TesterProfile } from "../types";
 
 interface ProfilePageProps {
@@ -38,7 +40,6 @@ interface ProfilePageProps {
   showQuickTools: boolean;
 }
 
-const PLANS_URL = "https://routelag.com/support/plans";
 const NOT_PROVIDED = "Not provided";
 const AFFILIATE_COMING_SOON = "Affiliate link coming soon";
 
@@ -59,6 +60,7 @@ export function ProfilePage({
   showQuickTools,
 }: ProfilePageProps) {
   const { showToast } = useToast();
+  const { hasProPlan, isLoaded: entitlementsLoaded } = useEntitlements();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState(testerProfile.tester_name);
@@ -78,7 +80,7 @@ export function ProfilePage({
     firstFilled(testerProfile.state_country, testerProfile.country_city) || NOT_PROVIDED;
   const isp = firstFilled(testerProfile.isp) || NOT_PROVIDED;
   const affiliateLink: string | null = null;
-  const hasSubscription = false;
+  const hasSubscription = entitlementsLoaded && hasProPlan;
 
   const profileStatus = hasConfig ? "Ready" : "Created on Optimize";
   const adminStatus = elevated ? "Ready" : "Required";
@@ -86,7 +88,7 @@ export function ProfilePage({
 
   const openPlans = async () => {
     try {
-      await openUrl(PLANS_URL);
+      await openExternalUrl(PLANS_URL);
     } catch (error) {
       showToast(`Could not open plans page: ${String(error)}`, "error");
     }
@@ -145,7 +147,7 @@ export function ProfilePage({
               title="Upload profile picture"
               onClick={() => fileInputRef.current?.click()}
             >
-              <Camera size={14} strokeWidth={2.2} aria-hidden="true" />
+              <Camera size={14} strokeWidth={1.75} aria-hidden="true" />
             </button>
           </div>
           <div>
@@ -158,7 +160,7 @@ export function ProfilePage({
                 disabled={avatarBusy}
                 onClick={removeAvatar}
               >
-                <Trash2 size={14} strokeWidth={2} aria-hidden="true" />
+                <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
                 Remove photo
               </button>
             )}
@@ -172,14 +174,14 @@ export function ProfilePage({
           >
             More Details
             {detailsOpen ? (
-              <ChevronUp size={18} strokeWidth={2} aria-hidden="true" />
+              <ChevronUp size={18} strokeWidth={1.75} aria-hidden="true" />
             ) : (
-              <ChevronDown size={18} strokeWidth={2} aria-hidden="true" />
+              <ChevronDown size={18} strokeWidth={1.75} aria-hidden="true" />
             )}
           </button>
           <button type="button" className="profile-logout-button" onClick={onLogout}>
             Log Out
-            <LogOut size={18} strokeWidth={2} aria-hidden="true" />
+            <LogOut size={18} strokeWidth={1.75} aria-hidden="true" />
           </button>
         </div>
       </header>
@@ -253,12 +255,12 @@ export function ProfilePage({
           <h2>Account details</h2>
           <div className="profile-subscription">
             <span className="profile-empty-icon" aria-hidden="true">
-              <Frown size={18} strokeWidth={2} />
+              <Frown size={18} strokeWidth={1.75} />
             </span>
             {hasSubscription ? (
               <>
                 <strong>Active plan</strong>
-                <p>Your RouteLag subscription is active.</p>
+                <p>your Zer0 subscription is active.</p>
               </>
             ) : (
               <>
@@ -295,13 +297,13 @@ export function ProfilePage({
           <InfoTile
             description="Core routing engine status."
             icon={Cpu}
-            title="RouteLag Engine"
+            title="Zer0 Engine"
             tone={engineInstalled ? "success" : "error"}
             value={engineStatus}
           />
           <label className="settings-toggle-row profile-toggle-row">
             <span className="settings-row-icon" aria-hidden="true">
-              <LayoutGrid size={18} strokeWidth={2} />
+              <LayoutGrid size={18} strokeWidth={1.75} />
             </span>
             <span className="settings-row-copy">
               <strong>Show quick tools bar</strong>
@@ -393,14 +395,14 @@ function InfoTile({
   return (
     <div className="settings-row">
       <span className="settings-row-icon" aria-hidden="true">
-        <Icon size={18} strokeWidth={2} />
+        <Icon size={18} strokeWidth={1.75} />
       </span>
       <span className="settings-row-copy">
         <strong>{title}</strong>
         <small>{description}</small>
       </span>
       <span className={`settings-status settings-status-${tone}`}>
-        <Check size={14} strokeWidth={2.4} aria-hidden="true" />
+        <Check size={14} strokeWidth={1.75} aria-hidden="true" />
         {value}
       </span>
     </div>

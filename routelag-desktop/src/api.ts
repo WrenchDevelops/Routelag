@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+﻿import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type {
@@ -67,7 +67,7 @@ export const api = {
   tunnelStatus: () => invoke<TunnelStatus>("tunnel_status"),
   getPublicIp: () => invoke<string>("get_public_ip"),
   pingHost: (host?: string) => invoke<PingResult>("ping_host", { host }),
-  runRouteTest: (mode: "normal" | "routelag") =>
+  runRouteTest: (mode: "normal" | "Zer0") =>
     invoke<RouteTestResult>("run_route_test", { mode }),
   loadRouteTest: () => invoke<RouteTestResult | null>("load_route_test"),
   readLogs: () => invoke<string>("read_logs"),

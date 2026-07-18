@@ -21,11 +21,11 @@ pub struct ConfigIdentity {
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("RouteLag route profile not found. Start Optimization to create one.")]
+    #[error("Zer0 route profile not found. Start Optimization to create one.")]
     NotFound,
-    #[error("Invalid RouteLag route profile: missing [Interface] section")]
+    #[error("Invalid Zer0 route profile: missing [Interface] section")]
     MissingInterface,
-    #[error("Invalid RouteLag route profile: missing PrivateKey")]
+    #[error("Invalid Zer0 route profile: missing PrivateKey")]
     MissingPrivateKey,
     #[error("Failed to read config: {0}")]
     ReadFailed(String),
@@ -240,7 +240,9 @@ pub fn get_server_display_name(app_data_dir: &Path) -> Option<String> {
 
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("# RouteLag") && trimmed.contains("client config for") {
+        if (trimmed.starts_with("# RouteLag") || trimmed.starts_with("# Zer0"))
+            && trimmed.contains("client config for")
+        {
             if let Some(name) = trimmed.split("client config for").nth(1) {
                 return Some(name.trim().to_string());
             }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RouteLag Setup",
+  "productName": "Zer0 Setup",
   "version": "0.1.4",
-  "identifier": "com.routelag.setup",
+  "identifier": "com.zer0.setup",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1430",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "RouteLag Setup",
+        "title": "Zer0 Setup",
         "width": 900,
         "height": 620,
         "resizable": false,
@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'",
       "capabilities": ["default"]
     }
   },

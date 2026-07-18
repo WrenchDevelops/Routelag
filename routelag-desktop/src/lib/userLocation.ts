@@ -70,13 +70,41 @@ export function resolveAutoRouteRegion(userLocation: string) {
   return "middle-east";
 }
 
+const NA_EAST_HINTS = [
+  "virginia",
+  "ashburn",
+  "new york",
+  "new jersey",
+  "pennsylvania",
+  "maryland",
+  "dc",
+  "washington",
+  "florida",
+  "georgia",
+  "north carolina",
+  "massachusetts",
+  "connecticut",
+];
+
 export function recommendRouteId(
   userLocation: string,
   routeIds: string[],
   autoRecommendedId?: string | null,
   startableRouteIds?: string[],
 ) {
-  if (IS_BETA_DALLAS) return "dallas-beta";
+  if (IS_BETA_DALLAS) {
+    const startable = new Set(startableRouteIds?.length ? startableRouteIds : routeIds);
+    const normalizedLocation = userLocation.toLowerCase();
+    if (
+      startable.has("ashburn-beta") &&
+      NA_EAST_HINTS.some((hint) => normalizedLocation.includes(hint))
+    ) {
+      return "ashburn-beta";
+    }
+    if (startable.has("dallas-beta")) return "dallas-beta";
+    if (startable.has("ashburn-beta")) return "ashburn-beta";
+    return routeIds[0] ?? "dallas-beta";
+  }
 
   const startable = new Set(
     startableRouteIds?.length ? startableRouteIds : routeIds,
@@ -94,7 +122,14 @@ export function recommendRouteId(
     normalizedLocation.includes("united states") ||
     normalizedLocation.includes("usa")
   ) {
+    if (
+      available.has("ashburn-beta") &&
+      NA_EAST_HINTS.some((hint) => normalizedLocation.includes(hint))
+    ) {
+      return "ashburn-beta";
+    }
     if (available.has("dallas-beta")) return "dallas-beta";
+    if (available.has("ashburn-beta")) return "ashburn-beta";
   }
 
   if (AFRICA_ME_COUNTRIES.has(country) || normalizedLocation.includes("south africa")) {
@@ -102,6 +137,7 @@ export function recommendRouteId(
   }
 
   if (available.has("dallas-beta")) return "dallas-beta";
+  if (available.has("ashburn-beta")) return "ashburn-beta";
   if (available.has("johannesburg-beta")) return "johannesburg-beta";
   return routeIds[0] ?? "dallas-beta";
 }
@@ -134,6 +170,7 @@ export async function resolveUserLocationLabel(
 
 export function fortniteRegionLabel(routeId: string, gameRegion?: string) {
   if (routeId === "dallas-beta") return "NA-Central";
+  if (routeId === "ashburn-beta" || routeId === "virginia-beta") return "NA-East";
   if (gameRegion) return gameRegion;
   if (routeId === "johannesburg-beta") return "Middle East";
   return "NA-Central";

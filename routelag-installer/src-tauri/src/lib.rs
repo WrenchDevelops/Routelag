@@ -4,6 +4,7 @@ mod fs_ops;
 mod install_engine;
 mod install_manifest;
 mod logging;
+mod network_cleanup;
 mod payload;
 mod process_kill;
 mod registry;
@@ -67,7 +68,12 @@ fn get_existing_install() -> Option<ExistingInstall> {
 #[tauri::command]
 fn default_install_dir() -> String {
     let program_files = std::env::var_os("ProgramFiles").unwrap_or_else(|| "C:\\Program Files".into());
-    PathBuf::from(program_files).join("RouteLag").display().to_string()
+    PathBuf::from(program_files).join("Zer0").display().to_string()
+}
+
+#[tauri::command]
+fn install_requires_admin(install_dir: String) -> bool {
+    path_requires_admin(&install_dir)
 }
 
 #[tauri::command]
@@ -155,16 +161,12 @@ fn exit_app(app: AppHandle) {
 #[tauri::command]
 fn launch_app(install_dir: String) -> Result<(), String> {
     let dir = PathBuf::from(&install_dir);
-    let exe = if dir.join("RouteLag.exe").exists() {
-        dir.join("RouteLag.exe")
-    } else if dir.join("RouteLag Beta.exe").exists() {
-        dir.join("RouteLag Beta.exe")
-    } else {
-        return Err(format!(
-            "RouteLag was not found in {}. The install may be incomplete — try running the installer again.",
+    let exe = registry::resolve_app_exe(&dir).ok_or_else(|| {
+        format!(
+            "Zer0 was not found in {}. The install may be incomplete — try running the installer again.",
             dir.display()
-        ));
-    };
+        )
+    })?;
     std::process::Command::new(&exe)
         .current_dir(&dir)
         .spawn()
@@ -257,7 +259,7 @@ fn spawn_worker(app: AppHandle, job: Job, progress_file: String) {
                     emit_line(
                         &app,
                         ProgressLine::finished_err(
-                            "Administrator permission is required to install RouteLag to this location.",
+                            "Administrator permission is required to install Zer0 to this location.",
                         ),
                     );
                 }
@@ -330,6 +332,7 @@ pub fn run_ui() {
             has_payload,
             get_existing_install,
             default_install_dir,
+            install_requires_admin,
             browse_install_dir,
             get_disk_space,
             start_install,
@@ -339,5 +342,5 @@ pub fn run_ui() {
             exit_app,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running the RouteLag installer");
+        .expect("error while running the Zer0 installer");
 }

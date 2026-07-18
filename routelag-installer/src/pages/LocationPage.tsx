@@ -28,7 +28,7 @@ export function LocationPage({
   return (
     <div className="page page-wide">
       <h1 className="page-title">Choose Install Location</h1>
-      <p className="page-subtitle">Select where RouteLag should be installed.</p>
+      <p className="page-subtitle">Select where Zer0 should be installed.</p>
 
       <div className="location-card">
         <label className="location-label" htmlFor="install-dir">
@@ -66,7 +66,8 @@ export function LocationPage({
       </div>
 
       <p className="page-note">
-        Installing to Program Files may require Windows administrator permission.
+        Installing under Program Files requires Windows administrator permission (UAC). Approving
+        the prompt is required to finish install. Starting Optimization later also requires admin.
       </p>
 
       {needsHudOnlyAcknowledgement ? (
@@ -77,8 +78,8 @@ export function LocationPage({
             onChange={(event) => onHudOnlyAcknowledgedChange?.(event.target.checked)}
           />
           <span>
-            RouteLag Base App is required to launch and manage the HUD Runtime. I confirm this
-            path is an existing RouteLag install or a manual install target I want to use.
+            Zer0 Base App is required to launch and manage the HUD Runtime. I confirm this
+            path is an existing Zer0 install or a manual install target I want to use.
           </span>
         </label>
       ) : null}

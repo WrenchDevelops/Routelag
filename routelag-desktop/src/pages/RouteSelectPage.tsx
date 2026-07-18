@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { RouteOption } from "../App";
 import { IS_BETA_DALLAS } from "../lib/betaMode";
@@ -10,38 +10,43 @@ import {
   recommendRouteId,
   resolveUserLocationLabel,
 } from "../lib/userLocation";
-import type { AutoRouteState, TesterProfile, WireGuardProbeStep } from "../types";
+import type { AutoRouteState, TesterProfile } from "../types";
 
 interface RouteSelectPageProps {
   autoRouteBusy: boolean;
   autoRouteState: AutoRouteState;
   busy: boolean;
-  cleanupBusy: boolean;
   onAutoRoute: () => void;
   onOptimize: () => void;
   onOpenSession: () => void;
   onRestoreInternet: () => void;
   onSelectRoute: (routeId: string) => void;
-  onTestServer: () => void;
   routes: RouteOption[];
   selectedRoute: string;
-  serverProbeBusy: boolean;
-  serverProbeSteps: WireGuardProbeStep[] | null;
   sessionActive: boolean;
   staleTunnelOnly: boolean;
   testerProfile: TesterProfile;
 }
 
-const preferredOrder = ["johannesburg", "dallas"];
+const preferredOrder = ["johannesburg", "dallas", "ashburn"];
 
 const defaultRoutes: RouteCard[] = IS_BETA_DALLAS
   ? [
       {
         available: false,
-        city: "Dallas Beta",
+        city: "Dallas",
         countryName: "United States",
         flag: "US",
         id: "dallas-beta",
+        ping: "",
+        pingLabel: "",
+      },
+      {
+        available: false,
+        city: "Ashburn",
+        countryName: "United States",
+        flag: "US",
+        id: "ashburn-beta",
         ping: "",
         pingLabel: "",
       },
@@ -49,7 +54,7 @@ const defaultRoutes: RouteCard[] = IS_BETA_DALLAS
   : [
       {
         available: false,
-        city: "Johannesburg Beta",
+        city: "Johannesburg",
         countryName: "South Africa",
         flag: "ZA",
         id: "johannesburg-beta",
@@ -58,10 +63,19 @@ const defaultRoutes: RouteCard[] = IS_BETA_DALLAS
       },
       {
         available: false,
-        city: "Dallas Beta",
+        city: "Dallas",
         countryName: "United States",
         flag: "US",
         id: "dallas-beta",
+        ping: "",
+        pingLabel: "",
+      },
+      {
+        available: false,
+        city: "Ashburn",
+        countryName: "United States",
+        flag: "US",
+        id: "ashburn-beta",
         ping: "",
         pingLabel: "",
       },
@@ -71,17 +85,13 @@ export function RouteSelectPage({
   autoRouteBusy,
   autoRouteState,
   busy,
-  cleanupBusy,
   onAutoRoute,
   onOptimize,
   onOpenSession,
   onRestoreInternet,
   onSelectRoute,
-  onTestServer,
   routes,
   selectedRoute,
-  serverProbeBusy,
-  serverProbeSteps,
   sessionActive,
   staleTunnelOnly,
   testerProfile,
@@ -122,19 +132,26 @@ export function RouteSelectPage({
     if (appliedRecommendationRef.current) return;
     if (userLocation === "Detecting location...") return;
     if (sessionActive || staleTunnelOnly) return;
+    if (!recommendedId) return;
     onSelectRoute(recommendedId);
     appliedRecommendationRef.current = true;
   }, [onSelectRoute, recommendedId, sessionActive, staleTunnelOnly, userLocation]);
 
+  useEffect(() => {
+    if (!routeCards.length) return;
+    if (routeCards.some((route) => route.id === selectedRoute)) return;
+    const next = recommended?.id ?? routeCards[0]?.id;
+    if (next) onSelectRoute(next);
+  }, [onSelectRoute, recommended?.id, routeCards, selectedRoute]);
+
   const selected = routeCards.find((route) => route.id === selectedRoute) ?? recommended;
-  const busyOptimizing = busy || autoRouteBusy || serverProbeBusy;
+  const busyOptimizing = busy || autoRouteBusy;
   const optimizeDisabled =
     busyOptimizing ||
     sessionActive ||
     staleTunnelOnly ||
     !selected ||
     selected.available === false;
-  const testDisabled = busyOptimizing || sessionActive || staleTunnelOnly || !selected;
 
   return (
     <main className="routing-main routing-picker-main">
@@ -147,21 +164,21 @@ export function RouteSelectPage({
               Fortnite
             </span>
           </div>
-          <p>Choose the best RouteLag server for Fortnite.</p>
+          <p>Choose the best Zer0 server for Fortnite.</p>
         </div>
       </header>
 
       {sessionActive && (
         <button type="button" className="routing-session-banner" onClick={onOpenSession}>
           <span className="routing-status-dot" />
-          RouteLag is connected from your last session — view live stats
+          Zer0 is connected from your last session — view live stats
         </button>
       )}
 
       {staleTunnelOnly && (
         <div className="routing-stale-tunnel-banner">
           <span>
-            RouteLag tunnel is still connected, but no active session was found. Use Restore
+            Zer0 tunnel is still connected, but no active session was found. Use Restore
             Internet before starting again.
           </span>
           <button type="button" onClick={onRestoreInternet}>
@@ -178,29 +195,7 @@ export function RouteSelectPage({
               <strong>
                 {autoRouteState === "probing" ? "Testing routes" : "Finding best route"}
               </strong>
-              <p>Checking RouteLag servers for Fortnite. This takes a few seconds.</p>
-            </div>
-          </div>
-        )}
-
-        {serverProbeBusy && (
-          <div className="routing-auto-overlay">
-            <div className="routing-auto-modal routing-probe-modal">
-              <div className="routing-loading-ring" />
-              <strong>Testing WireGuard server</strong>
-              <p>Connecting briefly to verify the server and tunnel, then cleaning up.</p>
-              {serverProbeSteps && (
-                <ol className="routing-probe-steps">
-                  {serverProbeSteps.map((step) => (
-                    <ProbeStepRow
-                      key={step.id}
-                      label={step.label}
-                      status={step.status}
-                      detail={step.detail}
-                    />
-                  ))}
-                </ol>
-              )}
+              <p>Checking Zer0 servers for Fortnite. This takes a few seconds.</p>
             </div>
           </div>
         )}
@@ -216,7 +211,7 @@ export function RouteSelectPage({
               type="button"
               className="routing-server-card routing-auto-card-v2"
               onClick={onAutoRoute}
-              disabled={busyOptimizing}
+              disabled={busyOptimizing || routeCards.length === 0}
             >
               <span className="routing-server-icon routing-auto-icon">
                 <SparkIcon />
@@ -224,7 +219,7 @@ export function RouteSelectPage({
               <span className="routing-server-copy">
                 <strong>Auto</strong>
                 <small>Recommended</small>
-                <em>Let RouteLag choose the best server.</em>
+                <em>Let Zer0 choose the best server.</em>
               </span>
               <span className="routing-recommended-chip">Best</span>
             </button>
@@ -233,7 +228,7 @@ export function RouteSelectPage({
               <button
                 type="button"
                 key={route.id}
-                className={`routing-server-card ${route.id === selected.id ? "selected" : ""}`}
+                className={`routing-server-card ${route.id === selected?.id ? "selected" : ""}`}
                 onClick={() => onSelectRoute(route.id)}
                 disabled={route.available === false}
               >
@@ -253,13 +248,20 @@ export function RouteSelectPage({
                   </em>
                 </span>
                 <span
-                  className={`routing-radio ${route.id === selected.id ? "selected" : ""}`}
+                  className={`routing-radio ${route.id === selected?.id ? "selected" : ""}`}
                   aria-hidden="true"
                 >
-                  {route.id === selected.id && <CheckIcon />}
+                  {route.id === selected?.id && <CheckIcon />}
                 </span>
               </button>
             ))}
+
+            {!routeCards.length && (
+              <div className="routing-empty-state">
+                <strong>No servers available</strong>
+                <p>Check your connection and try refreshing routes.</p>
+              </div>
+            )}
           </div>
         </section>
 
@@ -269,52 +271,59 @@ export function RouteSelectPage({
             <p>Optimized route for Fortnite.</p>
           </div>
 
-          <div className="route-diagram">
-            <RouteNode icon={<UserIcon />} label="You" meta={userLocation} />
-            <RouteLine />
-            <RouteNode
-              active
-              badge={selected.id === recommendedId ? "Recommended" : undefined}
-              icon={<ServerIcon />}
-              label={selected.city}
-              meta={selected.countryName}
-            />
-            <RouteLine />
-            <RouteNode
-              image="/games/fortnite.jpg"
-              icon={<FortniteIcon />}
-              label="Fortnite"
-              meta={fortniteRegionLabel(selected.id, selected.gameRegion)}
-            />
-          </div>
+          {selected ? (
+            <>
+              <div className="route-diagram">
+                <div className="route-diagram-rail">
+                  <span className="route-node-icon">
+                    <UserIcon />
+                  </span>
+                  <span className="route-connector" aria-hidden="true" />
+                  <span className="route-node-icon active">
+                    <ServerIcon />
+                  </span>
+                  <span className="route-connector" aria-hidden="true" />
+                  <span className="route-node-icon route-node-image">
+                    <img src="/games/fortnite.jpg" alt="" />
+                  </span>
+                </div>
 
-          <div className="routing-diagram-summary">
-            <span>Path</span>
-            <strong>You &rarr; {selected.city} &rarr; Fortnite</strong>
-            <small>
-              {sessionActive
-                ? "Connected — open live session for stats"
-                : "Pick a server, then press Start Optimization"}
-            </small>
-          </div>
-
-          {serverProbeSteps && !serverProbeBusy && (
-            <section className="routing-probe-results">
-              <div className="routing-panel-heading">
-                <h2>Server Test Results</h2>
-                <p>Latest WireGuard probe for {selected.city}.</p>
+                <div className="route-diagram-captions">
+                  <div className="route-caption">
+                    <strong>You</strong>
+                    <small>{userLocation}</small>
+                  </div>
+                  <div className="route-caption">
+                    {selected.id === recommendedId ? (
+                      <em className="route-caption-badge">Recommended</em>
+                    ) : (
+                      <span className="route-caption-spacer" aria-hidden="true" />
+                    )}
+                    <strong>{selected.city}</strong>
+                    <small>{selected.countryName}</small>
+                  </div>
+                  <div className="route-caption">
+                    <strong>Fortnite</strong>
+                    <small>{fortniteRegionLabel(selected.id, selected.gameRegion)}</small>
+                  </div>
+                </div>
               </div>
-              <ol className="routing-probe-steps">
-                {serverProbeSteps.map((step) => (
-                  <ProbeStepRow
-                    key={step.id}
-                    label={step.label}
-                    status={step.status}
-                    detail={step.detail}
-                  />
-                ))}
-              </ol>
-            </section>
+
+              <div className="routing-diagram-summary">
+                <span>Path</span>
+                <strong>You &rarr; {selected.city} &rarr; Fortnite</strong>
+                <small>
+                  {sessionActive
+                    ? "Connected — open live session for stats"
+                    : "Pick a server, then press Start Optimization"}
+                </small>
+              </div>
+            </>
+          ) : (
+            <div className="routing-empty-state routing-empty-state-panel">
+              <strong>No route selected</strong>
+              <p>Choose a server on the left to preview the optimized path.</p>
+            </div>
           )}
 
           <div className="routing-diagram-actions">
@@ -326,23 +335,6 @@ export function RouteSelectPage({
             >
               <BoltIcon />
               {sessionActive ? "View Live Session" : "Start Optimization"}
-            </button>
-            <button
-              type="button"
-              className="routing-test-button"
-              onClick={onTestServer}
-              disabled={testDisabled}
-            >
-              <WrenchIcon />
-              {serverProbeBusy ? "Testing Server" : "Test WireGuard Server"}
-            </button>
-            <button
-              type="button"
-              className="routing-restore-button"
-              onClick={onRestoreInternet}
-              disabled={cleanupBusy}
-            >
-              {cleanupBusy ? "Restoring Internet" : "Restore Internet"}
             </button>
           </div>
         </section>
@@ -407,15 +399,20 @@ function makeRouteCards(routes: RouteOption[]): RouteCard[] {
 
 function routeCityKey(city: string, id: string) {
   if (id === "dallas-beta") return "dallas";
-  return city.toLowerCase();
+  if (id === "ashburn-beta" || id === "virginia-beta") return "ashburn";
+  if (id === "johannesburg-beta") return "johannesburg";
+  return city.toLowerCase().replace(/\s+beta$/i, "");
 }
 
 function normalizeCity(value: string, id?: string) {
-  if (id === "dallas-beta") return "Dallas Beta";
+  if (id === "dallas-beta") return "Dallas";
+  if (id === "ashburn-beta" || id === "virginia-beta") return "Ashburn";
+  if (id === "johannesburg-beta") return "Johannesburg";
   const lower = value.toLowerCase();
-  if (lower.includes("johannesburg")) return "Johannesburg Beta";
-  if (lower.includes("dallas")) return "Dallas Beta";
-  return value.replace(/\s+beta$/i, "");
+  if (lower.includes("johannesburg")) return "Johannesburg";
+  if (lower.includes("dallas")) return "Dallas";
+  if (lower.includes("ashburn") || lower.includes("virginia")) return "Ashburn";
+  return value.replace(/\s+beta$/i, "").trim();
 }
 
 function countryName(
@@ -425,7 +422,15 @@ function countryName(
   id?: string,
   _meta?: string,
 ) {
-  if (id === "dallas-beta" || city === "Dallas Beta") {
+  if (id === "dallas-beta" || city === "Dallas" || city === "Dallas Beta") {
+    return "United States";
+  }
+  if (
+    id === "ashburn-beta" ||
+    id === "virginia-beta" ||
+    city === "Ashburn" ||
+    city === "Ashburn Beta"
+  ) {
     return "United States";
   }
   if (city === "Johannesburg Beta" || city === "Johannesburg") return "South Africa";
@@ -435,12 +440,23 @@ function countryName(
     case "US":
       return "United States";
     default:
-      return region || country || "RouteLag";
+      return region || country || "Zer0";
   }
 }
 
 function routeFlag(country: string | undefined, city: string, id?: string) {
-  if (id === "dallas-beta" || city === "Dallas Beta" || country === "US") return "US";
+  if (
+    id === "dallas-beta" ||
+    id === "ashburn-beta" ||
+    id === "virginia-beta" ||
+    city === "Dallas" ||
+    city === "Ashburn" ||
+    city === "Dallas Beta" ||
+    city === "Ashburn Beta" ||
+    country === "US"
+  ) {
+    return "US";
+  }
   if (city === "Johannesburg Beta" || city === "Johannesburg" || country === "ZA") return "ZA";
   return "RL";
 }
@@ -448,55 +464,6 @@ function routeFlag(country: string | undefined, city: string, id?: string) {
 function cleanPing(ping: string) {
   if (!ping || ping === "API" || ping === "Test" || ping === "Soon") return "";
   return ping;
-}
-
-function ProbeStepRow({
-  detail,
-  label,
-  status,
-}: {
-  detail?: string;
-  label: string;
-  status: WireGuardProbeStep["status"];
-}) {
-  return (
-    <li className={`routing-probe-step ${status}`}>
-      <span className="routing-probe-step-icon" aria-hidden="true">
-        {status === "pass" ? "✓" : status === "fail" ? "!" : status === "running" ? "…" : "·"}
-      </span>
-      <span className="routing-probe-step-copy">
-        <strong>{label}</strong>
-        {detail ? <small>{detail}</small> : null}
-      </span>
-    </li>
-  );
-}
-
-function RouteNode({
-  active,
-  badge,
-  icon,
-  image,
-  label,
-  meta,
-}: {
-  active?: boolean;
-  badge?: string;
-  icon: ReactNode;
-  image?: string;
-  label: string;
-  meta: string;
-}) {
-  return (
-    <div className={`route-node ${active ? "active" : ""}`}>
-      <span className={`route-node-icon ${image ? "route-node-image" : ""}`}>
-        {image ? <img src={image} alt="" /> : icon}
-      </span>
-      {badge && <em>{badge}</em>}
-      <strong>{label}</strong>
-      <small>{meta}</small>
-    </div>
-  );
 }
 
 function CountryFlag({ code }: { code: string }) {
@@ -516,14 +483,6 @@ function CountryFlag({ code }: { code: string }) {
     >
       <span />
     </span>
-  );
-}
-
-function RouteLine() {
-  return (
-    <div className="route-line" aria-hidden="true">
-      <span className="route-line-bar" />
-    </div>
   );
 }
 
@@ -564,29 +523,10 @@ function ServerIcon() {
   );
 }
 
-function FortniteIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <path d="M8 4h9" />
-      <path d="M8 4v16" />
-      <path d="M8 12h7" />
-      <path d="M8 20h4" />
-    </svg>
-  );
-}
-
 function BoltIcon() {
   return (
     <svg viewBox="0 0 24 24">
       <path d="M13 2 5 14h6l-1 8 9-13h-6l1-7Z" />
-    </svg>
-  );
-}
-
-function WrenchIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-3.3-3.3 2.1-2.1Z" />
     </svg>
   );
 }

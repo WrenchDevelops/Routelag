@@ -33,7 +33,7 @@ export function CompletePage({
       <div className="checkbox-list complete-options">
         {launchOption ? (
           <CheckboxRow
-            title="Launch RouteLag now"
+            title="Launch Zer0 now"
             checked={launchOption.checked}
             onChange={launchOption.onChange}
           />

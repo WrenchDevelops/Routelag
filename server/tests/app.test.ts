@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -6,9 +6,10 @@ import test from "node:test";
 
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { computeAllowedIps } from "../src/nodes.js";
+import { computeAllowedIps, filterNodesForBetaMode } from "../src/nodes.js";
 import type { RouteNode } from "../src/nodes.js";
 import { normalizeOsirionToPathGen } from "../src/replay/pathgenNormalizer.js";
+import { JsonStore } from "../src/store.js";
 
 const testNodes: RouteNode[] = [
   {
@@ -71,22 +72,89 @@ const testNodes: RouteNode[] = [
     recommended: false,
     pingEstimate: "Test in Fortnite",
   },
+  {
+    id: "ashburn-beta",
+    gameId: "fortnite",
+    name: "Ashburn Beta",
+    label: "NA-East Test Node",
+    region: "NA-East",
+    city: "Ashburn",
+    country: "US",
+    available: true,
+    endpoint: "66.163.122.222:51820",
+    publicIp: "66.163.122.222",
+    wireguardPort: 51820,
+    publicKey: "ashburn-server-public-key",
+    tunnelCidr: "10.68.0.0/24",
+    serverTunnelIp: "10.68.0.1",
+    clientStartIp: "10.68.0.10",
+    wgInterface: "wg0",
+    targets: [
+      {
+        id: "fortnite-na-epic",
+        ip: "18.88.0.0",
+        cidr: "18.88.0.0/16",
+        region: "NA",
+        protocol: "udp",
+        ports: [],
+        enabled: true,
+      },
+    ],
+    provisioner: {
+      mode: "ssh",
+      host: "66.163.122.222",
+      user: "root",
+      privateKeyPath: "/tmp/ashburn-provisioner",
+    },
+    tags: ["na", "nae", "ashburn", "beta"],
+    notes: "NA-East test node for targeted Fortnite routing.",
+    debugLabel: "na-east",
+    recommended: true,
+    pingEstimate: "Test in Fortnite",
+  },
 ];
 
-function testConfig() {
+function testConfig(overrides: Partial<ReturnType<typeof loadConfig>> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "routelag-server-"));
   return {
     dir,
     config: loadConfig({
       dataFile: join(dir, "db.json"),
       reportsDir: join(dir, "reports"),
+      peersFile: join(dir, "peers.json"),
+      runtimeControlsFile: join(dir, "runtime-controls.json"),
+      wgConfigFile: join(dir, "wg0.conf"),
       authSecret: "test-secret",
       adminSecret: "admin-secret",
       inviteCodes: new Set(["BETA-SA-001"]),
       peerMode: "mock",
       nodes: testNodes.map((node) => ({ ...node })),
+      requireRoutingEntitlement: true,
+      deploymentEnv: "development",
+      allowInternalRoutingEntitlement: true,
+      internalRoutingInviteCodes: new Set(["BETA-SA-001"]),
+      entitlementTokenTtlSeconds: 900,
+      entitlementCacheTtlMs: 60_000,
+      maxConcurrentSessionsPerUser: 1,
+      ...overrides,
     }),
   };
+}
+
+const VALID_CLIENT_PUBLIC_KEY = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi1234567890+/=";
+
+async function mintInternalRoutingToken(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  inviteCode = "BETA-SA-001",
+  deviceId = "device-test-1",
+) {
+  const exchange = await app.inject({
+    method: "POST",
+    url: "/api/entitlements/routing-token",
+    payload: { inviteCode, deviceId },
+  });
+  assert.equal(exchange.statusCode, 200, exchange.body);
+  return exchange.json<{ token: string; testerId: string }>();
 }
 
 test("rejects invalid invite and protects route creation", async () => {
@@ -109,7 +177,7 @@ test("rejects invalid invite and protects route creation", async () => {
   assert.equal(create.statusCode, 401);
 });
 
-test("lists the Johannesburg and Dallas beta routes", async () => {
+test("lists the Johannesburg, Dallas, and Ashburn beta routes", async () => {
   const { dir, config } = testConfig();
   const app = await buildApp(config);
   tCleanup(dir, app);
@@ -120,13 +188,18 @@ test("lists the Johannesburg and Dallas beta routes", async () => {
   });
   assert.equal(response.statusCode, 200);
   const servers = response.json<{ servers: Array<{ id: string; status: string; allowedIps: string[]; tunnelCidr?: string }> }>().servers;
-  assert.deepEqual(servers.map((server) => server.id), ["johannesburg-beta", "dallas-beta"]);
+  assert.deepEqual(servers.map((server) => server.id), [
+    "johannesburg-beta",
+    "dallas-beta",
+    "ashburn-beta",
+  ]);
   assert.equal(servers.every((server) => server.status === "online"), true);
   assert.deepEqual(
     servers.find((server) => server.id === "dallas-beta")?.allowedIps,
     ["18.88.0.0/16"],
   );
   assert.equal(servers.find((server) => server.id === "dallas-beta")?.tunnelCidr, "10.67.0.0/24");
+  assert.equal(servers.find((server) => server.id === "ashburn-beta")?.tunnelCidr, "10.68.0.0/24");
 });
 
 test("creates, reports, and ends a mock route session on Dallas", async () => {
@@ -134,13 +207,7 @@ test("creates, reports, and ends a mock route session on Dallas", async () => {
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  assert.equal(login.statusCode, 200);
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   const create = await app.inject({
     method: "POST",
@@ -210,12 +277,7 @@ test("rejects Johannesburg session when peer provisioning is disabled", async ()
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   const create = await app.inject({
     method: "POST",
@@ -255,12 +317,7 @@ test("blocks beta routes that are not targeted IPv4 host routes", async () => {
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   const create = await app.inject({
     method: "POST",
@@ -288,12 +345,7 @@ test("admin sessions require admin auth and expose node metadata", async () => {
   });
   assert.equal(unauthorized.statusCode, 401);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   await app.inject({
     method: "POST",
@@ -324,12 +376,7 @@ test("returns auto route candidates and nodes for fortnite", async () => {
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   const response = await app.inject({
     method: "GET",
@@ -354,10 +401,10 @@ test("returns auto route candidates and nodes for fortnite", async () => {
   }>();
   const { nodes, candidates, targets } = body;
 
-  assert.deepEqual(nodes.map((n) => n.id), ["johannesburg-beta", "dallas-beta"]);
+  assert.deepEqual(nodes.map((n) => n.id), ["johannesburg-beta", "dallas-beta", "ashburn-beta"]);
 
-  // 1 direct + 2 single-hop + 1 chain (Johannesburg → Dallas)
-  assert.equal(candidates.length, 4);
+  // 1 direct + 3 single-hop + 2 chains (Johannesburg → Dallas/Ashburn)
+  assert.equal(candidates.length, 6);
 
   const direct = candidates.find((c) => c.type === "direct");
   assert.ok(direct, "should have a direct candidate");
@@ -365,10 +412,11 @@ test("returns auto route candidates and nodes for fortnite", async () => {
   assert.equal(direct?.estimateOnly, false);
 
   const singles = candidates.filter((c) => c.type === "single");
-  assert.equal(singles.length, 2);
-  assert.deepEqual(singles.map((c) => c.id), ["johannesburg-beta", "dallas-beta"]);
+  assert.equal(singles.length, 3);
+  assert.deepEqual(singles.map((c) => c.id), ["johannesburg-beta", "dallas-beta", "ashburn-beta"]);
   assert.equal(singles.find((c) => c.id === "johannesburg-beta")?.canStart, false);
   assert.equal(singles.find((c) => c.id === "dallas-beta")?.canStart, true);
+  assert.equal(singles.find((c) => c.id === "ashburn-beta")?.canStart, true);
 
   const dallas = singles.find((c) => c.id === "dallas-beta");
   assert.equal(dallas?.label, "Dallas Beta");
@@ -384,29 +432,49 @@ test("returns auto route candidates and nodes for fortnite", async () => {
   );
 
   const chains = candidates.filter((c) => c.type === "chain");
-  assert.equal(chains.length, 1);
-  assert.equal(chains[0].id, "johannesburg-beta--dallas-beta");
+  assert.equal(chains.length, 2);
+  assert.deepEqual(
+    chains.map((chain) => chain.id).sort(),
+    ["johannesburg-beta--ashburn-beta", "johannesburg-beta--dallas-beta"].sort(),
+  );
   assert.equal(chains.every((c) => c.canStart === false), true);
   assert.equal(chains.every((c) => c.estimateOnly === true), true);
   assert.equal(chains.every((c) => c.chainSupported === false), true);
 });
 
-test("health endpoint reports node status", async () => {
+test("health endpoint reports capacity without leaking host details", async () => {
   const { dir, config } = testConfig();
   const app = await buildApp(config);
   tCleanup(dir, app);
 
   const response = await app.inject({ method: "GET", url: "/health" });
   assert.equal(response.statusCode, 200);
-  const body = response.json<{ ok: boolean; peerMode: string; nodes: Array<{ id: string; online: boolean; endpoint: string | null; canStart: boolean }> }>();
+  const body = response.json<{
+    ok: boolean;
+    peerMode: string;
+    routingEnabled: boolean;
+    capacity: { activeSessions: number; nodesAcceptingRoutes: number };
+    nodes: Array<{
+      id: string;
+      acceptingRoutes: boolean;
+      capacity: { state: string };
+      endpoint?: string;
+      publicIp?: string;
+      tunnelCidr?: string;
+    }>;
+  }>();
   assert.equal(body.ok, true);
   assert.equal(body.peerMode, "mock");
-  assert.equal(body.nodes.length, 2);
+  assert.equal(body.routingEnabled, true);
+  assert.equal(body.nodes.length, 3);
   const dallas = body.nodes.find((node) => node.id === "dallas-beta");
-  assert.equal(dallas?.endpoint, "216.152.154.137:51820");
-  assert.equal(dallas?.canStart, true);
+  assert.equal(dallas?.acceptingRoutes, true);
+  assert.equal(dallas?.endpoint, undefined);
+  assert.equal(dallas?.publicIp, undefined);
+  assert.equal(dallas?.tunnelCidr, undefined);
   const johannesburg = body.nodes.find((node) => node.id === "johannesburg-beta");
-  assert.equal(johannesburg?.canStart, false);
+  assert.equal(johannesburg?.acceptingRoutes, false);
+  assert.equal(johannesburg?.capacity.state, "disabled");
 });
 
 test("POST /api/routes/test ranks direct vs single with known measurements", async () => {
@@ -414,12 +482,7 @@ test("POST /api/routes/test ranks direct vs single with known measurements", asy
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   const response = await app.inject({
     method: "POST",
@@ -455,12 +518,7 @@ test("POST /api/routes/test recommends direct when RouteLag is not meaningfully 
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   const response = await app.inject({
     method: "POST",
@@ -487,12 +545,7 @@ test("rejects chain route creation with clear message", async () => {
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   const create = await app.inject({
     method: "POST",
@@ -521,12 +574,7 @@ test("creates session via routePlan.type=single (backward compat with legacy bod
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
 
   const create = await app.inject({
     method: "POST",
@@ -555,12 +603,7 @@ test("replay upload requires auth and rejects non-replay files", async () => {
   });
   assert.equal(unauthorized.statusCode, 401);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
   const upload = await app.inject({
     method: "POST",
     url: "/api/replays/upload",
@@ -580,12 +623,7 @@ test("replay upload rejects files larger than configured max", async () => {
   const app = await buildApp(config);
   tCleanup(dir, app);
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/auth/login",
-    payload: { inviteCode: "BETA-SA-001" },
-  });
-  const token = login.json<{ token: string }>().token;
+  const { token } = await mintInternalRoutingToken(app);
   const upload = await app.inject({
     method: "POST",
     url: "/api/replays/upload",
@@ -632,7 +670,25 @@ test("beta login alias and route start/stop aliases work on Dallas", async () =>
     payload: { code: "BETA-SA-001" },
   });
   assert.equal(login.statusCode, 200);
-  const token = login.json<{ token: string }>().token;
+  const inviteToken = login.json<{ token: string; routingEntitlementRequired?: boolean }>().token;
+  assert.equal(login.json<{ routingEntitlementRequired?: boolean }>().routingEntitlementRequired, true);
+
+  const inviteOnlyCreate = await app.inject({
+    method: "POST",
+    url: "/api/routes/start",
+    headers: { authorization: `Bearer ${inviteToken}` },
+    payload: {
+      nodeId: "dallas-beta",
+      clientPublicKey: "abcdefghijklmnopqrstuvwxyz0123456789+/=",
+    },
+  });
+  assert.equal(inviteOnlyCreate.statusCode, 403);
+  assert.equal(
+    inviteOnlyCreate.json<{ code?: string }>().code,
+    "invite_only_insufficient",
+  );
+
+  const { token } = await mintInternalRoutingToken(app);
 
   const start = await app.inject({
     method: "POST",
@@ -658,14 +714,14 @@ test("beta login alias and route start/stop aliases work on Dallas", async () =>
   assert.equal(stop.json<{ active: boolean }>().active, false);
 });
 
-test("dallas beta mode exposes only the Dallas node", async () => {
+test("dallas beta mode exposes Dallas and Ashburn NA nodes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "routelag-server-"));
   const config = loadConfig({
     dataFile: join(dir, "db.json"),
     reportsDir: join(dir, "reports"),
     authSecret: "test-secret",
     betaMode: "dallas",
-    nodes: testNodes.filter((node) => node.id === "dallas-beta"),
+    nodes: filterNodesForBetaMode(testNodes, "dallas"),
   });
   const app = await buildApp(config);
   tCleanup(dir, app);
@@ -677,7 +733,7 @@ test("dallas beta mode exposes only the Dallas node", async () => {
   const servers = response.json<{ servers: Array<{ id: string }> }>().servers;
   assert.deepEqual(
     servers.map((server) => server.id),
-    ["dallas-beta"],
+    ["dallas-beta", "ashburn-beta"],
   );
 });
 
@@ -687,6 +743,44 @@ function tCleanup(dir: string, app: Awaited<ReturnType<typeof buildApp>>) {
     rmSync(dir, { recursive: true, force: true });
   });
 }
+
+test("expires abandoned active sessions after peer TTL", async () => {
+  const { dir, config } = testConfig();
+  config.peerTtlHours = 1;
+  const app = await buildApp(config);
+  tCleanup(dir, app);
+
+  const { token } = await mintInternalRoutingToken(app);
+
+  const create = await app.inject({
+    method: "POST",
+    url: "/api/routes/create",
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      gameId: "fortnite",
+      serverId: "dallas-beta",
+      clientPublicKey: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi1234567890+/=",
+      appVersion: "0.2.1",
+    },
+  });
+  assert.equal(create.statusCode, 200);
+  const sessionId = create.json<{ sessionId: string }>().sessionId;
+
+  const dbPath = config.dataFile;
+  const raw = JSON.parse(readFileSync(dbPath, "utf8")) as {
+    sessions: Array<{ sessionId: string; createdAt: string; active: boolean }>;
+  };
+  const session = raw.sessions.find((item) => item.sessionId === sessionId);
+  assert.ok(session);
+  session.createdAt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  writeFileSync(dbPath, `${JSON.stringify(raw, null, 2)}\n`);
+
+  const store = new JsonStore(config.dataFile);
+  const expired = store.expireStaleActiveSessions(1);
+  assert.equal(expired.length, 1);
+  assert.equal(expired[0]?.sessionId, sessionId);
+  assert.equal(store.findSession(sessionId)?.active, false);
+});
 
 function multipartHeaders(fileName: string, content: string) {
   const body = multipartBody(fileName, content);

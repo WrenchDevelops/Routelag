@@ -1,4 +1,4 @@
-import { GlowButton } from "../components/GlowButton";
+﻿import { GlowButton } from "../components/GlowButton";
 import type { LifecycleStressStatus, TesterProfile } from "../types";
 
 interface DiagnosticsPageProps {
@@ -130,7 +130,7 @@ export function DiagnosticsPage({
         <span className="panel-label">Network Information</span>
         <div className="diagnostic-grid">
           <InfoItem label="Servers" value="JHB / FRA / LON / AMS" />
-          <InfoItem label="Engine" value="RouteLag Engine" />
+          <InfoItem label="Engine" value="Zer0 Engine" />
           <InfoItem label="Reports" value="Local export" />
           <InfoItem label="Privacy" value="IP and ping" />
         </div>

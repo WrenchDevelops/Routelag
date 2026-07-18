@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api";
 import { AdminModal } from "../components/AdminModal";
@@ -91,11 +91,11 @@ export function ConnectPage() {
 
   const handleConnect = async () => {
     if (!hasConfig) {
-      showToast("Create or import a RouteLag route profile in Settings first.", "warning");
+      showToast("Create or import A Zer0 route profile in Settings first.", "warning");
       return;
     }
     if (!engineInstalled) {
-      showToast("RouteLag Engine is missing or damaged. Reinstall RouteLag.", "error");
+      showToast("Zer0 Engine is missing or damaged. Reinstall Zer0.", "error");
       return;
     }
     if (!elevated) {
@@ -200,7 +200,7 @@ export function ConnectPage() {
   const handleRestoreInternet = () => {
     if (
       !confirm(
-        "Restore Internet? This stops the RouteLag tunnel, uninstalls its route service, and flushes DNS. RouteLag stays installed.",
+        "Restore Internet? This stops The Zer0 tunnel, uninstalls its route service, and flushes DNS. Zer0 stays installed.",
       )
     ) {
       return;
@@ -223,7 +223,7 @@ export function ConnectPage() {
     <div className="flex h-full flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">RouteLag Beta</h1>
+          <h1 className="text-2xl font-semibold text-white">Zer0</h1>
           <p className="mt-1 text-sm text-muted">
             Config: {serverName ?? "No config imported"}
           </p>
@@ -233,13 +233,13 @@ export function ConnectPage() {
 
       {!hasConfig && (
         <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-amber-100">
-          Create or import a RouteLag route profile in Settings before connecting.
+          Create or import A Zer0 route profile in Settings before connecting.
         </div>
       )}
 
       {!engineInstalled && (
         <div className="rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-red-200">
-          RouteLag Engine is missing or damaged. Reinstall RouteLag.
+          Zer0 Engine is missing or damaged. Reinstall Zer0.
         </div>
       )}
 

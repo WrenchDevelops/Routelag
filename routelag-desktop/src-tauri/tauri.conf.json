@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RouteLag Beta",
-  "version": "0.1.4",
-  "identifier": "com.routelag.beta",
+  "productName": "Zer0",
+  "version": "0.2.1",
+  "identifier": "com.zer0.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "RouteLag Beta",
+        "title": "Zer0",
         "width": 1280,
         "height": 720,
         "minWidth": 960,
@@ -26,7 +26,8 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: https:; font-src 'self' data: https:; connect-src 'self' ipc: http://ipc.localhost https: http://216.152.154.137:3001 ws: wss:; frame-src 'self' https:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self' https:",
+      "capabilities": ["default"]
     }
   },
   "bundle": {

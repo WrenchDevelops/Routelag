@@ -4,11 +4,11 @@
 
 set -euo pipefail
 
-# --- Constants ---
+# --- Constants (override per-node via env when installing) ---
 readonly WG_INTERFACE="wg0"
 readonly WG_PORT="51820"
-readonly WG_SUBNET="10.66.66.0/24"
-readonly SERVER_TUNNEL_IP="10.66.66.1/24"
+readonly WG_SUBNET="${ROUTELAG_WG_SUBNET:-10.66.66.0/24}"
+readonly SERVER_TUNNEL_IP="${ROUTELAG_SERVER_TUNNEL_IP:-10.66.66.1/24}"
 readonly CLIENT_IP_START=2
 readonly WG_CONF="/etc/wireguard/wg0.conf"
 readonly WG_KEYS_DIR="/etc/wireguard"

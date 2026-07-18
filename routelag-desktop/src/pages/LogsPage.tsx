@@ -1,4 +1,4 @@
-interface LogsPageProps {
+﻿interface LogsPageProps {
   logs: string;
   onBack: () => void;
 }
@@ -8,11 +8,11 @@ export function LogsPage({ logs, onBack }: LogsPageProps) {
     <div className="tool-view">
       <header className="tool-header">
         <button type="button" className="back-link" onClick={onBack}>
-          ← Back
+          â† Back
         </button>
         <div>
           <h1>Connection Logs</h1>
-          <p>RouteLag Engine events</p>
+          <p>Zer0 Engine events</p>
         </div>
         <span className="header-spacer" />
       </header>

@@ -55,7 +55,7 @@ function buildReason(
   directBreakdown: ScoreBreakdown,
 ): string {
   if (recommended.candidate.type === "direct") {
-    return "Direct is recommended because RouteLag did not improve this route.";
+    return "Direct is recommended because Zer0 did not improve this route.";
   }
 
   const label = recommended.candidate.label;
@@ -106,7 +106,7 @@ export function rankRoutes(
   const directCandidate: RouteCandidate = candidates.find((c) => c.type === "direct") ?? {
     id: "direct",
     type: "direct",
-    label: "Direct (RouteLag OFF)",
+    label: "Direct (Zer0 OFF)",
     hopCount: 0,
     status: "available",
     canStart: false,
@@ -266,7 +266,7 @@ export function rankRoutes(
     } else {
       recommendedRoute = directEntry;
       directIsBetter = true;
-      reasons.push("Direct is recommended because RouteLag did not improve this route.");
+      reasons.push("Direct is recommended because Zer0 did not improve this route.");
     }
   } else if (directEntry) {
     recommendedRoute = directEntry;
@@ -274,7 +274,7 @@ export function rankRoutes(
     if (!bestSingle) {
       warnings.push("No single-hop routes could be measured or are available.");
     }
-    reasons.push("Direct route recommended. No RouteLag measurements available for comparison.");
+    reasons.push("Direct route recommended. No Zer0 measurements available for comparison.");
   }
 
   return {

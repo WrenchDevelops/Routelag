@@ -1,13 +1,17 @@
 {
   "name": "routelag-desktop",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "build:beta:dallas": "powershell -ExecutionPolicy Bypass -Command \"$env:VITE_ROUTELAG_API_URL='http://216.152.154.137:3001'; $env:VITE_ROUTELAG_BETA_MODE='dallas'; npm run build\"",
     "preview": "vite preview",
+    "test:hud-access": "node --experimental-strip-types --test src/lib/hudAccess.test.ts",
+    "test:heartbeat": "node --experimental-strip-types --test src/lib/routeHeartbeat.test.ts",
+    "test:legal-consent": "node --experimental-strip-types --test src/lib/legalConsent.test.ts",
+    "test": "npm run test:hud-access && npm run test:heartbeat && npm run test:legal-consent",
     "check:engine:windows": "node scripts/check-engine-windows.js",
     "tauri": "node scripts/tauri-command.js",
     "tauri:build": "node scripts/tauri-command.js build",
@@ -19,6 +23,8 @@
     "installer:legacy-nsis": "powershell -ExecutionPolicy Bypass -File installer\\build.ps1"
   },
   "dependencies": {
+    "@clerk/react": "^6.12.3",
+    "@clerk/ui": "^1.25.4",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
@@ -38,5 +44,8 @@
     "tailwindcss": "^4.3.1",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
+  },
+  "allowScripts": {
+    "sharp@0.35.3": true
   }
 }

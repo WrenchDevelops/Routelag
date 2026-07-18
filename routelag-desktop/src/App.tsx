@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal, flushSync } from "react-dom";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useAuth, useUser } from "@clerk/react";
 
 import { api } from "./api";
 import {
@@ -16,9 +16,11 @@ import {
 import { AdminModal } from "./components/AdminModal";
 import { AppSidebar } from "./components/AppSidebar";
 import type { AppNavItem } from "./components/AppSidebar";
+import { BetaConsentGate } from "./components/BetaConsentGate";
 import { AccountPage } from "./pages/AccountPage";
 import { MiniAppShell } from "./components/MiniAppShell";
 import { MiniFooterNav } from "./components/MiniFooterNav";
+import { StartupSplash } from "./components/StartupSplash";
 import { ToastProvider, useToast } from "./components/Toast";
 import { DiagnosticsPage } from "./pages/DiagnosticsPage";
 import { HelpCenterPage } from "./pages/HelpCenterPage";
@@ -32,8 +34,21 @@ import { RouteSelectPage } from "./pages/RouteSelectPage";
 import { LiveSessionPage } from "./pages/LiveSessionPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
-import { clearRouteAuth, getRouteToken, routeApi, ROUTELAG_API_URL } from "./lib/api";
+import { clearRouteAuth, ensurePathGenSession, getRouteToken, routeApi, ROUTELAG_API_URL } from "./lib/api";
 import { IS_BETA_DALLAS } from "./lib/betaMode";
+import {
+  pullAndApplyCloudPreferences,
+  pullCloudUserState,
+  pushCloudProfile,
+} from "./lib/cloudUserSync";
+import { HUD_ENABLED, REPLAY_ENABLED } from "./lib/featureFlags";
+import {
+  attachClerkUserIdToLegalConsent,
+  hasAcceptedCurrentLegal,
+} from "./lib/legalConsent";
+import { pushNotification } from "./lib/notifications";
+import { useEntitlements } from "./lib/billing";
+import { UpgradeGate } from "./components/UpgradeGate";
 import {
   fallbackRouteOptions,
   mapRoutingNodeToRouteOption,
@@ -43,16 +58,19 @@ import {
 import {
   exportReport as exportRouteReport,
   restoreInternet as restoreRouteInternet,
+  resumeRouteHeartbeat,
   runDiagnostics as runRouteDiagnostics,
   startOptimization as startRouteOptimization,
   stopOptimization,
-  testWireGuardServer,
+  stopRouteHeartbeat,
+  pickLivePingHost,
   type ActiveRouteSession,
 } from "./lib/routeEngine";
 import { runAutoRoute as runAutoRouteFlow } from "./lib/autoRoute";
 import {
   detectPublicIpLocation,
   formatProfileLocation,
+  fortniteRegionLabel,
   recommendRouteId,
   resolveAutoRouteRegion,
 } from "./lib/userLocation";
@@ -60,6 +78,7 @@ import type { AutoRouteState } from "./types";
 import type {
   BetaReportSnapshot,
   FortniteReplay,
+  HomeReplayCard,
   InlineError,
   LifecycleStressStatus,
   OptimizeState,
@@ -69,7 +88,6 @@ import type {
   RouteMode,
   TesterProfile,
   TunnelStatus,
-  WireGuardProbeStep,
 } from "./types";
 import {
   defaultLifecycleStressStatus,
@@ -130,8 +148,6 @@ const PRESERVED_ROUTE_STORAGE_KEYS = new Set([
 ]);
 const LIFECYCLE_STRESS_KEY = "routelag.lifecycleStress";
 const QUICK_TOOLS_KEY = "routelag.showQuickTools";
-const MIN_HOME_LOADER_MS = 450;
-const HOME_NAV_PAINT_MS = 80;
 const RESTORABLE_VIEWS: MiniView[] = [
   "games",
   "routes",
@@ -149,6 +165,8 @@ function loadInitialView(): MiniView {
   if (!prefs.openLastPage) return "games";
   const saved = window.localStorage.getItem(LAST_VIEW_KEY);
   if (saved && RESTORABLE_VIEWS.includes(saved as MiniView)) {
+    if (saved === "hud" && !HUD_ENABLED) return "games";
+    if (saved === "replays" && !REPLAY_ENABLED) return "games";
     return saved as MiniView;
   }
   return "games";
@@ -207,11 +225,15 @@ function restoreWarningDetails(
   result: RestoreInternetResult,
   recovery: RecoveryStatus,
 ) {
+  const summary = result.summary?.trim();
   const failed = result.steps
     .filter((step) => !step.ok)
     .map((step) => `${step.step}: ${step.message}`)
     .join("\n");
-  return [failed, recoveryDetails(recovery)].filter(Boolean).join("\n\n");
+  const notRestored = (result.not_restored ?? []).join("\n");
+  return [summary, failed || notRestored, recoveryDetails(recovery)]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function loadLifecycleStressStatus(): LifecycleStressStatus {
@@ -226,8 +248,8 @@ function loadLifecycleStressStatus(): LifecycleStressStatus {
 
 function serviceLeftoverSummary(recovery: RecoveryStatus) {
   if (!recovery.route_service_installed) return "None";
-  if (recovery.route_service_running) return "RouteLag service still running";
-  return "RouteLag service installed but stopped";
+  if (recovery.route_service_running) return "Zer0 service still running";
+  return "Zer0 service installed but stopped";
 }
 
 function apiCleanupSummary(warnings: string[]) {
@@ -238,18 +260,25 @@ function apiCleanupSummary(warnings: string[]) {
 }
 
 function AppContent() {
+  const { user } = useUser();
+  const { getToken } = useAuth();
+  const pathGenSessionOptions = {
+    clerkUserId: user?.id,
+    clerkEmail:
+      user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress,
+    getClerkToken: () => getToken(),
+  };
+  const [showSplash, setShowSplash] = useState(true);
+  const dismissSplash = useCallback(() => setShowSplash(false), []);
   const { showToast } = useToast();
+  const entitlements = useEntitlements();
+  const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedCurrentLegal());
+  const [consentAppVersion, setConsentAppVersion] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(() => Boolean(getRouteToken()));
   const [showQuickTools, setShowQuickTools] = useState(
     () => window.localStorage.getItem(QUICK_TOOLS_KEY) === "true",
   );
   const [view, setView] = useState<MiniView>(loadInitialView);
-  const [homeLoading, setHomeLoading] = useState(false);
-  const [homeMounted, setHomeMounted] = useState(true);
-  const homeNavTimerRef = useRef<number | null>(null);
-  const homeNavSwitchRef = useRef<number | null>(null);
-  const homeNavFinishRef = useRef<number | null>(null);
-  const homeNavStartedAtRef = useRef<number | null>(null);
   const [selectedGame, setSelectedGame] = useState<GameId>("fortnite");
   const [selectedRoute, setSelectedRoute] = useState(
     IS_BETA_DALLAS ? "dallas-beta" : "johannesburg-beta",
@@ -263,7 +292,7 @@ function AppContent() {
   const [engineInstalled, setEngineInstalled] = useState(true);
   const [publicIp, setPublicIp] = useState("192.193.1.1");
   const [ping, setPing] = useState<PingResult | null>(null);
-  const [homeReplays, setHomeReplays] = useState<FortniteReplay[]>([]);
+  const [homeReplays, setHomeReplays] = useState<HomeReplayCard[]>([]);
   const [homeStatsLoading, setHomeStatsLoading] = useState(
     () => Boolean(getRouteToken()),
   );
@@ -281,10 +310,6 @@ function AppContent() {
   );
   const [routeMode, setRouteMode] = useState<RouteMode | null>(null);
   const [activeAllowedIps, setActiveAllowedIps] = useState<string | null>(null);
-  const [serverProbeBusy, setServerProbeBusy] = useState(false);
-  const [serverProbeSteps, setServerProbeSteps] = useState<WireGuardProbeStep[] | null>(
-    null,
-  );
   const [betaReport, setBetaReport] = useState<BetaReportSnapshot | null>(null);
   const [testerProfile, setTesterProfile] = useState<TesterProfile>(
     defaultTesterProfile,
@@ -299,6 +324,11 @@ function AppContent() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [autoRouteState, setAutoRouteState] = useState<AutoRouteState>("idle");
   const diagnosticsRunId = useRef(0);
+  const knownReplayPathsRef = useRef<Set<string> | null>(null);
+  const lossAlertAtRef = useRef(0);
+  const heartbeatSafeDisconnectRef = useRef(false);
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
 
   const statusView = normalizeTunnelStatus(status);
   const refreshMeta = useCallback(async () => {
@@ -317,6 +347,52 @@ function AppContent() {
     return { cfg, elev, wg, active, tunnel };
   }, []);
 
+  const handleHeartbeatPermanentFailure = useCallback(
+    (reason: string, detail: string) => {
+      if (heartbeatSafeDisconnectRef.current) return;
+      heartbeatSafeDisconnectRef.current = true;
+      setInlineError({
+        title: "Route session ended by server",
+        message:
+          reason === "user_blocked"
+            ? "This account can no longer route. Zer0 is restoring your network."
+            : reason === "entitlement_expired" || reason === "auth_expired"
+              ? "Routing authorization expired. Zer0 is restoring your network."
+              : "The server route session is no longer valid. Zer0 is restoring your network.",
+        details: detail,
+        canRestore: true,
+      });
+      void (async () => {
+        try {
+          await stopOptimization({ onState: setOptimizeState });
+          setRouteMode(null);
+          setActiveAllowedIps(null);
+          await refreshMeta();
+          showToast("Route ended safely after server rejection.", "info");
+        } catch {
+          try {
+            await restoreRouteInternet();
+          } catch {
+            // Local restore best-effort.
+          }
+        } finally {
+          heartbeatSafeDisconnectRef.current = false;
+          setOptimizeState("idle");
+        }
+      })();
+    },
+    [refreshMeta, showToast],
+  );
+
+  const routeLifecycleOptions = useCallback(
+    () => ({
+      onState: setOptimizeState,
+      getClerkToken: () => getTokenRef.current(),
+      onHeartbeatPermanentFailure: handleHeartbeatPermanentFailure,
+    }),
+    [handleHeartbeatPermanentFailure],
+  );
+
   const refreshStats = useCallback(async () => {
     await refreshMeta();
     try {
@@ -325,7 +401,21 @@ function AppContent() {
       setPublicIp("Unavailable");
     }
     try {
-      setPing(await api.pingHost());
+      const nextPing = await api.pingHost();
+      setPing(nextPing);
+      if (
+        nextPing.packet_loss_pct != null &&
+        nextPing.packet_loss_pct > 2 &&
+        Date.now() - lossAlertAtRef.current > 10 * 60_000
+      ) {
+        lossAlertAtRef.current = Date.now();
+        pushNotification({
+          kind: "routing",
+          title: "Packet loss detected",
+          body: `${Math.round(nextPing.packet_loss_pct)}% loss on the current path. Consider switching routes.`,
+          href: "routes",
+        });
+      }
     } catch {
       setPing(null);
     }
@@ -333,7 +423,7 @@ function AppContent() {
 
   const loadHomeDashboard = useCallback(async () => {
     setHomeStatsLoading(true);
-    setHomeReplaysLoading(true);
+    setHomeReplaysLoading(REPLAY_ENABLED);
 
     const statsTask = (async () => {
       try {
@@ -350,14 +440,104 @@ function AppContent() {
       }
     })();
 
-    const replaysTask = api
-      .listFortniteReplays()
-      .then(setHomeReplays)
-      .catch(() => setHomeReplays([]))
-      .finally(() => setHomeReplaysLoading(false));
+    const replaysTask = REPLAY_ENABLED
+      ? (async () => {
+          try {
+            const local = await api.listFortniteReplays().catch(() => [] as FortniteReplay[]);
+            const known = knownReplayPathsRef.current;
+            if (known) {
+              const fresh = local.filter((replay) => !known.has(replay.path));
+              if (fresh.length) {
+                pushNotification({
+                  id: `replay-local-${fresh[0].path}`,
+                  kind: "replay",
+                  title: "New replay detected",
+                  body: "Open PathGen to upload and analyze your latest match.",
+                  href: "replays",
+                });
+              }
+            }
+            knownReplayPathsRef.current = new Set(local.map((replay) => replay.path));
+
+            let cards: HomeReplayCard[] = local.slice(0, 3).map((replay) => ({
+              id: replay.path,
+              name: replay.name,
+              path: replay.path,
+              modified_at: replay.modified_at,
+              parsed: false,
+            }));
+
+            const sessionReady = await ensurePathGenSession(pathGenSessionOptions);
+            if (sessionReady) {
+              const parsed = await routeApi.getParsedReplays().catch(() => []);
+              if (parsed.length > 0) {
+                const byName = new Map(
+                  parsed.map((replay) => [replay.fileName.toLowerCase(), replay]),
+                );
+                // Prefer PathGen summaries (real Place / Kills / Damage).
+                cards = parsed
+                  .slice()
+                  .sort((a, b) => {
+                    const aTime = Date.parse(String(a.startedAt ?? a.parsedAt ?? a.createdAt)) || 0;
+                    const bTime = Date.parse(String(b.startedAt ?? b.parsedAt ?? b.createdAt)) || 0;
+                    return bTime - aTime;
+                  })
+                  .slice(0, 3)
+                  .map((replay) => ({
+                    id: replay.id,
+                    name: replay.fileName,
+                    modified_at: String(replay.startedAt ?? replay.parsedAt ?? replay.createdAt),
+                    placement: replay.placement,
+                    eliminations: replay.eliminations,
+                    damageDealt: replay.damageDealt,
+                    parsed: true,
+                  }));
+
+                // Enrich local-only rows when PathGen has fewer than 3.
+                if (cards.length < 3) {
+                  for (const localReplay of local) {
+                    if (cards.length >= 3) break;
+                    const match = byName.get(localReplay.name.toLowerCase());
+                    if (match && cards.some((card) => card.id === match.id)) continue;
+                    if (match) {
+                      cards.push({
+                        id: match.id,
+                        name: match.fileName,
+                        path: localReplay.path,
+                        modified_at: localReplay.modified_at,
+                        placement: match.placement,
+                        eliminations: match.eliminations,
+                        damageDealt: match.damageDealt,
+                        parsed: true,
+                      });
+                    } else if (!cards.some((card) => card.path === localReplay.path)) {
+                      cards.push({
+                        id: localReplay.path,
+                        name: localReplay.name,
+                        path: localReplay.path,
+                        modified_at: localReplay.modified_at,
+                        parsed: false,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+
+            setHomeReplays(cards.slice(0, 3));
+          } catch {
+            setHomeReplays([]);
+          } finally {
+            setHomeReplaysLoading(false);
+          }
+        })()
+      : Promise.resolve().then(() => {
+          setHomeReplays([]);
+          setHomeReplaysLoading(false);
+        });
 
     await Promise.all([statsTask, replaysTask]);
-  }, []);
+  }, [pathGenSessionOptions.clerkUserId, pathGenSessionOptions.clerkEmail]);
 
   const resetRouteRuntimeUi = useCallback((recovery?: RecoveryStatus) => {
     clearRouteRuntimeStorage();
@@ -400,6 +580,7 @@ function AppContent() {
       setTesterProfile((current) => {
         const next = { ...current, ...patch };
         void api.saveTesterProfile(next).catch(() => undefined);
+        void pushCloudProfile(next).catch(() => undefined);
         return next;
       });
     },
@@ -426,25 +607,18 @@ function AppContent() {
     void api
       .getRecoveryStatus()
       .then((recovery) => {
-        if (recovery.stale_state_detected) {
+        if (recovery.stale_state_detected && !recovery.active_route_session) {
           setInlineError({
             title: "Previous optimization did not close cleanly",
             message:
-              "RouteLag found a stored route session or tunnel service from an earlier run. Restore Internet before starting another optimization.",
+              "Zer0 found leftover tunnel state from an earlier run. Click Restore Internet before starting a new optimization.",
             details: recoveryDetails(recovery),
             canRestore: true,
           });
         }
       })
       .catch(() => undefined);
-    if (view !== "session" && view !== "routes" && busy !== "connect") {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      void api.tunnelStatus().then(setStatus).catch(() => undefined);
-    }, 6000);
-    return () => window.clearInterval(interval);
-  }, [busy, refreshMeta, view]);
+  }, [refreshMeta]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -452,44 +626,85 @@ function AppContent() {
     if (!prefs.checkEngineOnLaunch) return;
     void api.isRouteLagEngineAvailable().then((ok) => {
       if (!ok) {
-        showToast("RouteLag Engine was not found on this PC.", "error");
+        showToast("Zer0 Engine was not found on this PC.", "error");
+        pushNotification({
+          id: "engine-missing",
+          kind: "update",
+          title: "Engine missing",
+          body: "Zer0 Engine was not found on this PC. Reinstall to restore routing.",
+          href: "settings",
+        });
       }
     });
   }, [authenticated, showToast]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        const prefs = loadAppPreferences();
-        if (!prefs.confirmCloseOptimized || statusRef.current.state !== "connected") {
-          return;
-        }
-        event.preventDefault();
-        try {
-          const confirmed = await ask(
-            "RouteLag is still optimized. Close the app anyway?",
-            {
-              title: "RouteLag is optimized",
-              kind: "warning",
-              okLabel: "Close",
-              cancelLabel: "Stay",
-            },
-          );
-          if (confirmed) {
-            await api.exitApp();
+    let closing = false;
+    try {
+      void getCurrentWindow()
+        .onCloseRequested(async (event) => {
+          if (closing) return;
+          event.preventDefault();
+
+          const connected =
+            statusRef.current.state === "connected" ||
+            statusRef.current.state === "connecting";
+          const prefs = loadAppPreferences();
+
+          if (connected && prefs.confirmCloseOptimized) {
+            try {
+              const confirmed = await ask(
+                "Zer0 is still optimized. End routing and close the app?",
+                {
+                  title: "Zer0 is optimized",
+                  kind: "warning",
+                  okLabel: "End and Close",
+                  cancelLabel: "Stay",
+                },
+              );
+              if (!confirmed) {
+                return;
+              }
+            } catch {
+              // If the dialog fails, still attempt safe cleanup before exit.
+            }
           }
-        } catch {
-          await api.exitApp();
-        }
-      })
-      .then((fn) => {
-        unlisten = fn;
-      });
+
+          closing = true;
+          try {
+            if (connected || optimizeState !== "idle") {
+              stopRouteHeartbeat("app_exit");
+              await stopOptimization({ onState: setOptimizeState });
+            } else {
+              stopRouteHeartbeat("app_exit");
+            }
+          } catch {
+            stopRouteHeartbeat("app_exit");
+            try {
+              await restoreRouteInternet();
+            } catch {
+              // Rust exit_app still runs local safe_shutdown_routing.
+            }
+          }
+
+          try {
+            await api.exitApp();
+          } catch {
+            closing = false;
+          }
+        })
+        .then((fn) => {
+          unlisten = fn;
+        })
+        .catch(() => undefined);
+    } catch {
+      // Browser previews do not expose the Tauri window bridge.
+    }
     return () => {
       unlisten?.();
     };
-  }, []);
+  }, [optimizeState]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -501,23 +716,57 @@ function AppContent() {
   }, [authenticated, loadHomeDashboard]);
 
   useEffect(() => {
-    if (!authenticated) return;
     void api
-      .getTesterProfile()
-      .then((profile) =>
-        setTesterProfile({
+      .getAppVersion()
+      .then(setConsentAppVersion)
+      .catch(() => setConsentAppVersion(null));
+  }, []);
+
+  useEffect(() => {
+    if (!legalAccepted || !user?.id) return;
+    attachClerkUserIdToLegalConsent(user.id);
+  }, [legalAccepted, user?.id]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    void (async () => {
+      try {
+        await ensurePathGenSession(pathGenSessionOptions);
+        const local = await api.getTesterProfile().catch(() => defaultTesterProfile());
+        const { profile } = await pullCloudUserState({
           ...defaultTesterProfile(),
-          ...profile,
-          fortnite_region: profile.fortnite_region || "Middle East",
-        }),
-      )
-      .catch(() => undefined);
+          ...local,
+          fortnite_region: local.fortnite_region || "Middle East",
+        });
+        setTesterProfile(profile);
+        // Keep local disk copy aligned with cloud when cloud had newer fields.
+        void api.saveTesterProfile(profile).catch(() => undefined);
+        void pullAndApplyCloudPreferences().catch(() => undefined);
+      } catch {
+        void api
+          .getTesterProfile()
+          .then((profile) =>
+            setTesterProfile({
+              ...defaultTesterProfile(),
+              ...profile,
+              fortnite_region: profile.fortnite_region || "Middle East",
+            }),
+          )
+          .catch(() => undefined);
+      }
+    })();
     void api.loadBetaReportSnapshot().then(setBetaReport).catch(() => undefined);
     void routeApi
       .getRoutingNodes(selectedGame)
       .then((nodes) => {
         const mapped = nodes
-          .filter((node) => !IS_BETA_DALLAS || node.id === "dallas-beta")
+          .filter(
+            (node) =>
+              !IS_BETA_DALLAS ||
+              node.id === "dallas-beta" ||
+              node.id === "ashburn-beta" ||
+              node.id === "virginia-beta",
+          )
           .map((node) => mapRoutingNodeToRouteOption(node));
         setRoutes(mapped.length ? mergeRouteOptions(mapped) : fallbackRouteOptions);
         setSelectedRoute((current) => {
@@ -527,7 +776,7 @@ function AppContent() {
         });
       })
       .catch(() => setRoutes(fallbackRouteOptions));
-  }, [authenticated, selectedGame]);
+  }, [authenticated, selectedGame, pathGenSessionOptions.clerkUserId, pathGenSessionOptions.clerkEmail]);
 
   const optimizingNow =
     optimizeState === "preflight" ||
@@ -540,12 +789,28 @@ function AppContent() {
   const sessionActive =
     optimizingNow ||
     optimizeState === "optimized" ||
+    optimizeState === "degraded" ||
     (tunnelConnected && hasStoredSession && hasConfig);
   const staleTunnelOnly =
-    tunnelConnected && !hasStoredSession && !optimizingNow && optimizeState !== "optimized";
+    tunnelConnected && !hasStoredSession && !optimizingNow && optimizeState !== "optimized" && optimizeState !== "degraded";
 
   useEffect(() => {
-    if (view === "stats" || (view === "routes" && !sessionActive)) void refreshStats();
+    if (view !== "session" && view !== "routes" && busy !== "connect") {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void api.tunnelStatus().then(setStatus).catch(() => undefined);
+      if (view === "session" && sessionActive) {
+        void api
+          .pingHost(pickLivePingHost(activeAllowedIps))
+          .then(setPing)
+          .catch(() => setPing(null));
+      }
+    }, 6000);
+    return () => window.clearInterval(interval);
+  }, [activeAllowedIps, busy, sessionActive, view]);
+
+  useEffect(() => {
     if (view === "profile") void refreshSettings();
     if (view === "logs") {
       void api
@@ -553,41 +818,18 @@ function AppContent() {
         .then(setLogs)
         .catch((e) => setLogs(`Failed to load logs: ${String(e)}`));
     }
-  }, [refreshSettings, refreshStats, sessionActive, view]);
+  }, [refreshSettings, view]);
 
-  const finishHomeLoading = useCallback(() => {
-    const hideLoader = () => {
-      if (homeNavTimerRef.current != null) {
-        window.clearTimeout(homeNavTimerRef.current);
-        homeNavTimerRef.current = null;
-      }
-      if (homeNavSwitchRef.current != null) {
-        window.clearTimeout(homeNavSwitchRef.current);
-        homeNavSwitchRef.current = null;
-      }
-      if (homeNavFinishRef.current != null) {
-        window.clearTimeout(homeNavFinishRef.current);
-        homeNavFinishRef.current = null;
-      }
-      homeNavStartedAtRef.current = null;
-      setHomeLoading(false);
-    };
-
-    const started = homeNavStartedAtRef.current;
-    if (started == null) {
-      setHomeLoading(false);
+  const openView = useCallback((nextView: MiniView) => {
+    if (nextView === "hud" && !HUD_ENABLED) {
+      showToast("HUD is coming soon.", "info");
+      return;
+    }
+    if (nextView === "replays" && !REPLAY_ENABLED) {
+      showToast("Replay Engine is coming soon.", "info");
       return;
     }
 
-    const remaining = Math.max(0, MIN_HOME_LOADER_MS - (Date.now() - started));
-    if (remaining > 0) {
-      homeNavFinishRef.current = window.setTimeout(hideLoader, remaining);
-    } else {
-      hideLoader();
-    }
-  }, []);
-
-  const openView = (nextView: MiniView) => {
     setMessage(null);
     if (nextView !== "stats" && nextView !== "routes" && nextView !== "session") {
       setInlineError((error) =>
@@ -595,49 +837,8 @@ function AppContent() {
       );
     }
 
-    // Force the loader to paint before Home mounts/unhides. Without flushSync,
-    // React can batch the loader away and the UI looks frozen.
-    if (nextView === "games" && view !== "games") {
-      homeNavStartedAtRef.current = Date.now();
-      flushSync(() => {
-        setHomeLoading(true);
-        setHomeMounted(true);
-      });
-
-      if (homeNavTimerRef.current != null) {
-        window.clearTimeout(homeNavTimerRef.current);
-      }
-      if (homeNavSwitchRef.current != null) {
-        window.clearTimeout(homeNavSwitchRef.current);
-      }
-      if (homeNavFinishRef.current != null) {
-        window.clearTimeout(homeNavFinishRef.current);
-      }
-
-      // Safety: never leave the loader up forever.
-      homeNavTimerRef.current = window.setTimeout(() => {
-        finishHomeLoading();
-        homeNavTimerRef.current = null;
-      }, 3000);
-
-      // Hide the current page immediately (homeLoading) and give WebView2 time to paint the spinner.
-      homeNavSwitchRef.current = window.setTimeout(() => {
-        homeNavSwitchRef.current = null;
-        window.requestAnimationFrame(() => {
-          setView("games");
-          window.requestAnimationFrame(() => {
-            finishHomeLoading();
-          });
-        });
-      }, HOME_NAV_PAINT_MS);
-      return;
-    }
-
-    if (nextView !== "games") {
-      finishHomeLoading();
-    }
     setView(nextView);
-  };
+  }, [showToast]);
 
   const restartAsAdmin = async () => {
     setAdminLoading(true);
@@ -650,7 +851,7 @@ function AppContent() {
     }
   };
 
-  const setErrorFromUnknown = (error: unknown, title = "RouteLag could not continue") => {
+  const setErrorFromUnknown = (error: unknown, title = "Zer0 could not continue") => {
     const nextMessage = friendlyError(error);
     const toastMessage =
       title && title !== nextMessage && !nextMessage.startsWith(title)
@@ -661,7 +862,7 @@ function AppContent() {
       title,
       message: nextMessage,
       details: error instanceof Error ? error.stack ?? error.message : String(error),
-      canRetry: nextMessage.includes("RouteLag servers are unreachable"),
+      canRetry: nextMessage.includes("Zer0 servers are unreachable"),
       canRestore:
         nextMessage.includes("internet") ||
         nextMessage.includes("rollback") ||
@@ -671,6 +872,13 @@ function AppContent() {
     setMessage(nextMessage);
   };
 
+  /** Admin elevation failures: toast first; click opens restart modal. No page switch. */
+  const notifyAdminRequired = (message: string) => {
+    showToast(message, "error", {
+      onClick: () => setAdminModalOpen(true),
+    });
+  };
+
   const login = async (inviteCode: string) => {
     setBusy("login");
     setLoginAccepted(false);
@@ -678,15 +886,17 @@ function AppContent() {
     try {
       await routeApi.login(inviteCode);
       void api.logClientEvent(`beta_login_success api_url=${ROUTELAG_API_URL}`).catch(() => undefined);
-      console.log("[RouteLag] Authenticated against API", { apiBaseUrl: ROUTELAG_API_URL });
+      console.log("[Zer0] Authenticated against API", { apiBaseUrl: ROUTELAG_API_URL });
       setLoginAccepted(true);
       await new Promise((resolve) => window.setTimeout(resolve, 650));
       setAuthenticated(true);
       setView("games");
-      showToast("Logged in to RouteLag Beta.", "success");
+      showToast("Logged in to Zer0.", "success");
     } catch (e) {
       setLoginAccepted(false);
-      setErrorFromUnknown(e, "Sign in failed");
+      const nextMessage = friendlyError(e);
+      showToast(`Sign in failed: ${nextMessage}`, "error");
+      setMessage(nextMessage);
     } finally {
       setBusy(null);
     }
@@ -698,6 +908,15 @@ function AppContent() {
   };
 
   const logout = () => {
+    stopRouteHeartbeat("logout");
+    const connected =
+      statusRef.current.state === "connected" ||
+      statusRef.current.state === "connecting";
+    if (connected || optimizeState === "optimized" || optimizeState === "degraded") {
+      void stopOptimization({ onState: setOptimizeState }).catch(() => {
+        void restoreRouteInternet().catch(() => undefined);
+      });
+    }
     clearRouteAuth();
     setAuthenticated(false);
     setLoginAccepted(false);
@@ -705,8 +924,31 @@ function AppContent() {
     setInlineError(null);
     setMessage(null);
     setView("games");
-    showToast("Logged out of RouteLag Beta.", "info");
+    showToast("Logged out of Zer0.", "info");
   };
+
+  useEffect(() => {
+    const onLogout = () => {
+      stopRouteHeartbeat("logout");
+      clearRouteAuth();
+      setAuthenticated(false);
+      setLoginAccepted(false);
+      setBusy(null);
+      setInlineError(null);
+      setMessage(null);
+      setView("games");
+    };
+    window.addEventListener("routelag:logout", onLogout);
+    return () => window.removeEventListener("routelag:logout", onLogout);
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated) {
+      stopRouteHeartbeat("logout");
+      return;
+    }
+    void resumeRouteHeartbeat(routeLifecycleOptions()).catch(() => undefined);
+  }, [authenticated, routeLifecycleOptions]);
 
   const startAutoRoute = async () => {
     setAutoRouteState("probing");
@@ -715,7 +957,13 @@ function AppContent() {
       if (IS_BETA_DALLAS) {
         setSelectedRoute("dallas-beta");
         setAutoRouteState("done");
-        showToast("Dallas Beta selected for this build.", "success");
+        showToast("Dallas selected for this build.", "success");
+        pushNotification({
+          kind: "routing",
+          title: "Route switched",
+          body: "Dallas was selected for lower latency.",
+          href: "routes",
+        });
         return;
       }
 
@@ -730,27 +978,35 @@ function AppContent() {
         .filter((route) => route.available !== false)
         .map((route) => route.id);
 
-      if (
+      let chosenRouteId =
         recommended?.candidate.type === "single" &&
         recommended.candidate.serverId &&
         startableRouteIds.includes(recommended.candidate.serverId)
-      ) {
-        setSelectedRoute(recommended.candidate.serverId);
-      } else {
+          ? recommended.candidate.serverId
+          : null;
+      if (!chosenRouteId) {
         const bestSingle = result.testResult.rankedRoutes.find(
           (route) =>
             route.candidate.type === "single" &&
             route.candidate.serverId &&
             startableRouteIds.includes(route.candidate.serverId),
         );
-        if (bestSingle?.candidate.serverId) {
-          setSelectedRoute(bestSingle.candidate.serverId);
-        } else {
-          setSelectedRoute(recommendRouteId(locationLabel, routeIds, null, startableRouteIds));
-        }
+        chosenRouteId =
+          bestSingle?.candidate.serverId ??
+          recommendRouteId(locationLabel, routeIds, null, startableRouteIds);
       }
+      if (chosenRouteId) setSelectedRoute(chosenRouteId);
       setAutoRouteState("done");
       showToast("Auto Route found a recommended server.", "success");
+      const city =
+        resolveRouteOption(chosenRouteId ?? selectedRoute, routes)?.city ||
+        "A recommended server";
+      pushNotification({
+        kind: "routing",
+        title: "Route switched",
+        body: `${city} was selected for lower latency.`,
+        href: "routes",
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const locationLabel =
@@ -765,7 +1021,7 @@ function AppContent() {
         setSelectedRoute(fallbackId);
         setAutoRouteState("done");
         showToast(
-          `Selected ${fallbackId === "dallas-beta" ? "Dallas Beta" : "Johannesburg Beta"} based on your location.`,
+          `Selected ${fallbackId === "dallas-beta" ? "Dallas" : "Johannesburg"} based on your location.`,
           "info",
         );
         return;
@@ -777,51 +1033,6 @@ function AppContent() {
 
   const startOptimization = async () => {
     await startOptimizationForServer(selectedRoute);
-  };
-
-  const testSelectedServer = async () => {
-    setServerProbeBusy(true);
-    setServerProbeSteps(null);
-    setMessage(null);
-    try {
-      const meta = await refreshMeta();
-      if (!meta.elev) {
-        setErrorFromUnknown(
-          "Administrator permission is required to test the WireGuard server.",
-          "Administrator permission required",
-        );
-        setAdminModalOpen(true);
-        return;
-      }
-      if (!meta.wg) {
-        setErrorFromUnknown(
-          "RouteLag Engine is missing or damaged. Reinstall RouteLag.",
-          "RouteLag Engine missing",
-        );
-        return;
-      }
-      const result = await testWireGuardServer(selectedGame, selectedRoute, {
-        onStep: setServerProbeSteps,
-        cleanup: true,
-      });
-      if (result.ok) {
-        showToast("WireGuard server test passed.", "success");
-        setMessage("WireGuard server test passed. Safe to start optimization.");
-      } else {
-        const failed = result.steps.find((step) => step.status === "fail");
-        setErrorFromUnknown(
-          failed?.detail ?? "WireGuard server test failed.",
-          "Server test failed",
-        );
-        showToast("WireGuard server test failed. See step details.", "error");
-      }
-    } catch (e) {
-      setErrorFromUnknown(e, "Server test failed");
-      showToast(friendlyError(e), "error");
-    } finally {
-      setServerProbeBusy(false);
-      await refreshMeta();
-    }
   };
 
   const startOptimizationForServer = async (serverId: string) => {
@@ -852,27 +1063,26 @@ function AppContent() {
       }
       if (!meta.wg) {
         setErrorFromUnknown(
-          "RouteLag Engine is missing or damaged. Reinstall RouteLag.",
-          "RouteLag Engine missing",
+          "Zer0 Engine is missing or damaged. Reinstall Zer0.",
+          "Zer0 Engine missing",
         );
         setView("routes");
         return;
       }
       if (!meta.elev) {
-        setErrorFromUnknown(
+        notifyAdminRequired(
           "Administrator permission is required to start an Optimization session.",
-          "Administrator permission required",
         );
-        setAdminModalOpen(true);
         return;
       }
       setView("session");
       setStatus({ state: "connecting", message: null });
       const routeSession = await startRouteOptimization(selectedGame, serverId, {
-        onState: setOptimizeState,
+        ...routeLifecycleOptions(),
       });
       setRouteMode(routeSession.routeMode);
       setActiveAllowedIps(routeSession.allowedIps);
+      setInlineError(null);
       setBetaReport(await api.loadBetaReportSnapshot().catch(() => null));
       updateLifecycleStress((current) => ({
         ...current,
@@ -888,18 +1098,31 @@ function AppContent() {
       showToast(
         routeSession.routeMode === "split_route"
           ? "Optimization active."
-          : "RouteLag optimization started.",
+          : "Zer0 Optimization started.",
         "success",
       );
+      const optimizedCity =
+        resolveRouteOption(serverId, routes)?.city ?? serverId;
+      pushNotification({
+        kind: "routing",
+        title: "Route active",
+        body: `Fortnite traffic is optimized through ${optimizedCity}.`,
+        href: "session",
+      });
     } catch (e) {
       const nextMessage = friendlyError(e);
+      if (isAdminPermissionError(e)) {
+        notifyAdminRequired(nextMessage);
+        setStatus({ state: "disconnected", message: null });
+        return;
+      }
       setStatus({ state: "error", message: nextMessage });
       setErrorFromUnknown(e, "Optimization did not start safely");
       setView("session");
     } finally {
       setBusy(null);
       setOptimizeState((state) => {
-        if (state === "optimized" || state === "idle") return state;
+        if (state === "optimized" || state === "idle" || state === "degraded") return state;
         if (state === "preflight") return "idle";
         return "error";
       });
@@ -913,11 +1136,9 @@ function AppContent() {
     try {
       const meta = await refreshMeta();
       if (!meta.elev) {
-        setErrorFromUnknown(
+        notifyAdminRequired(
           "Administrator permission is required to end an Optimization session.",
-          "Administrator permission required",
         );
-        setAdminModalOpen(true);
         return;
       }
       const result = await stopOptimization({ onState: setOptimizeState });
@@ -945,18 +1166,23 @@ function AppContent() {
               : "Cleanup needs attention",
           message:
             result.status === "ended_with_warning"
-              ? "RouteLag restored the local connection, but one cleanup step reported a warning."
-              : "RouteLag tried to end optimization, but cleanup could not fully complete.",
+              ? "Zer0 restored the local connection, but one cleanup step reported a warning."
+              : "Zer0 tried to end optimization, but cleanup could not fully complete.",
           details: result.warnings.join("\n"),
           canRestore: true,
         });
       }
+      setView("routes");
     } catch (e) {
+      if (isAdminPermissionError(e)) {
+        notifyAdminRequired(friendlyError(e));
+        return;
+      }
       setErrorFromUnknown(e, "End Optimization failed");
+      setView("routes");
     } finally {
       setBusy(null);
       setOptimizeState("idle");
-      setView("routes");
     }
   };
 
@@ -965,13 +1191,14 @@ function AppContent() {
     try {
       const meta = await refreshMeta();
       if (!meta.elev) {
-        setMessage("Administrator permission is required to reconnect RouteLag Engine.");
-        setAdminModalOpen(true);
+        notifyAdminRequired(
+          "Administrator permission is required to reconnect Zer0 Engine.",
+        );
         return;
       }
       await api.reconnectTunnel();
       await refreshStats();
-      showToast("RouteLag Engine reconnected.", "success");
+      showToast("Zer0 Engine reconnected.", "success");
     } catch (e) {
       const nextMessage = friendlyError(e);
       showToast(nextMessage, "error");
@@ -1042,7 +1269,7 @@ function AppContent() {
   };
 
   const removeConfig = async () => {
-    if (!confirm("Clear the saved RouteLag route profile?")) return;
+    if (!confirm("Clear the saved Zer0 route profile?")) return;
     setBusy("remove");
     try {
       await api.removeConfig();
@@ -1063,11 +1290,9 @@ function AppContent() {
     try {
       const meta = await refreshMeta();
       if (!meta.elev) {
-        setErrorFromUnknown(
+        notifyAdminRequired(
           "Administrator permission is required for Restore Internet.",
-          "Administrator permission required",
         );
-        setAdminModalOpen(true);
         return;
       }
       const result = await restoreRouteInternet(meta.active?.session_id);
@@ -1091,14 +1316,14 @@ function AppContent() {
             : "Restore Internet completed with warnings",
           message:
             result.ok
-              ? "RouteLag still sees local recovery state after cleanup."
-              : "A RouteLag cleanup step reported a failure that could still affect RouteLag networking.",
+              ? "Zer0 still sees local recovery state after cleanup."
+              : "A Zer0 cleanup step reported a failure that could still affect Zer0 networking.",
           details: restoreWarningDetails(result, recovery),
           canRestore: true,
         });
       } else {
         const success =
-          "Restore Internet completed. No active RouteLag engine was found, and local route state was cleared.";
+          "Restore Internet completed. No active Zer0 Engine was found, and local route state was cleared.";
         setMessage(success);
         if (recoveryIsClean(recovery)) setInlineError(null);
         showToast(success, "success");
@@ -1115,11 +1340,9 @@ function AppContent() {
     try {
       const meta = await refreshMeta();
       if (!meta.elev) {
-        setErrorFromUnknown(
+        notifyAdminRequired(
           "Administrator permission is required for Windows network repair.",
-          "Administrator permission required",
         );
-        setAdminModalOpen(true);
         return;
       }
       const result = await api.repairWindowsNetwork();
@@ -1139,24 +1362,52 @@ function AppContent() {
     }
   };
 
+  const navPingLabel =
+    ping?.avg_ping_ms == null ? "--" : String(Math.round(ping.avg_ping_ms));
+
+  const selectedRouteOption = resolveRouteOption(selectedRoute, routes);
+  const sessionConnecting =
+    busy === "connect" ||
+    ["preflight", "creating_server_session", "writing_profile", "starting_engine", "verifying_connection"].includes(
+      optimizeState,
+    );
+  const sessionStrip = authenticated
+    ? {
+        connected: tunnelConnected,
+        connecting: sessionConnecting,
+        actionBusy: busy === "connect" || busy === "disconnect" || busy === "cleanup",
+        routeCity:
+          selectedRouteOption?.city ??
+          selectedRouteOption?.label?.replace(/\s*Beta$/i, "") ??
+          null,
+        regionLabel: fortniteRegionLabel(
+          selectedRoute,
+          selectedRouteOption?.gameRegion,
+        ),
+        pingMs: ping?.avg_ping_ms == null ? null : Math.round(ping.avg_ping_ms),
+        hudOn: HUD_ENABLED,
+        replayCaptureOn: REPLAY_ENABLED,
+        onConnect: () => {
+          setSelectedGame("fortnite");
+          void startOptimization();
+        },
+        onDisconnect: () => void endOptimization(),
+        onOpenHud: HUD_ENABLED ? () => openView("hud") : undefined,
+        onOpenReplays: REPLAY_ENABLED ? () => openView("replays") : undefined,
+      }
+    : null;
+
+  const canUseApp = legalAccepted && authenticated;
+
   return (
     <>
-      {homeLoading &&
-        createPortal(
-          <div
-            className="home-page-loader"
-            aria-busy="true"
-            aria-live="polite"
-            aria-label="Loading home"
-          >
-            <div className="home-page-loader-ring" />
-          </div>,
-          document.body,
-        )}
+      {showSplash && <StartupSplash onDone={dismissSplash} />}
       <MiniAppShell
-        onSettings={authenticated ? () => openView("settings") : undefined}
+        currentView={canUseApp ? view : undefined}
+        onNavigate={canUseApp ? openView : undefined}
+        sessionStrip={canUseApp ? sessionStrip : null}
         footer={
-          authenticated && showQuickTools && view !== "games" && !homeLoading && (
+          canUseApp && showQuickTools && view !== "games" && (
             <MiniFooterNav
               cleanupBusy={busy === "cleanup"}
               onDiagnostics={() => openView("diagnostics")}
@@ -1167,15 +1418,21 @@ function AppContent() {
           )
         }
       >
-      {!authenticated && (
+      {!legalAccepted && (
+        <BetaConsentGate
+          appVersion={consentAppVersion}
+          clerkUserId={user?.id}
+          onAccepted={() => setLegalAccepted(true)}
+        />
+      )}
+      {legalAccepted && !authenticated && (
         <LoginPage
           accepted={loginAccepted}
           busy={busy === "login"}
-          error={inlineError}
           onLogin={(code) => login(code)}
         />
       )}
-      {authenticated && homeMounted && (
+      {canUseApp && (
         <div
           className="home-dashboard"
           hidden={view !== "games"}
@@ -1185,6 +1442,7 @@ function AppContent() {
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
         <HomePage
@@ -1199,48 +1457,47 @@ function AppContent() {
           status={status}
           statusLabel={statusView.label}
           testerName={testerProfile.tester_name}
-          onAutoRoute={() => void startAutoRoute()}
-          onDiagnostics={() => openView("diagnostics")}
-          onLogs={() => openView("logs")}
+          userLocation={formatProfileLocation(testerProfile) || "Your location"}
           onNavigate={openView}
           onOptimize={(routeId) => {
             setSelectedGame("fortnite");
             setSelectedRoute(routeId);
-            setView("session");
             void startOptimizationForServer(routeId);
           }}
-          onRestoreInternet={() => void restoreInternet()}
-          onReady={finishHomeLoading}
+          onSelectRoute={setSelectedRoute}
         />
           </div>
         </div>
       )}
-      {authenticated && view === "routes" && !homeLoading && (
+      {canUseApp && view === "routes" && (
         <div className={`home-dashboard ${view === "routes" ? "routing-dashboard" : ""}`}>
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
         <RouteSelectPage
           autoRouteBusy={autoRouteState === "probing" || autoRouteState === "ranking"}
           autoRouteState={autoRouteState}
           busy={busy === "connect"}
-          cleanupBusy={busy === "cleanup"}
           onAutoRoute={() => void startAutoRoute()}
           onOptimize={() => {
-            setView("session");
             void startOptimization();
           }}
-          onOpenSession={() => setView("session")}
+          onOpenSession={() => {
+            if (!sessionActive && !staleTunnelOnly) {
+              showToast("Start optimization from Routing first.", "info");
+              setView("routes");
+              return;
+            }
+            setView("session");
+          }}
           onRestoreInternet={() => void restoreInternet()}
           onSelectRoute={setSelectedRoute}
-          onTestServer={() => void testSelectedServer()}
           routes={routes}
           selectedRoute={selectedRoute}
-          serverProbeBusy={serverProbeBusy}
-          serverProbeSteps={serverProbeSteps}
           sessionActive={sessionActive}
           staleTunnelOnly={staleTunnelOnly}
           testerProfile={testerProfile}
@@ -1248,25 +1505,30 @@ function AppContent() {
           </div>
         </div>
       )}
-      {authenticated && view === "session" && !homeLoading && (
+      {canUseApp && view === "session" && (
         <div className="home-dashboard routing-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
         <LiveSessionPage
           activeAllowedIps={activeAllowedIps}
           busy={busy === "connect"}
           cleanupBusy={busy === "cleanup" || busy === "disconnect"}
-          connected={sessionActive && !optimizingNow}
+          connected={
+            !optimizingNow &&
+            (sessionActive || (tunnelConnected && hasConfig && Boolean(activeAllowedIps)))
+          }
           inlineError={inlineError}
           optimizeState={optimizeState}
+          ping={ping}
           selectedCity={
             resolveRouteOption(selectedRoute, routes)?.city ??
             resolveRouteOption(selectedRoute, routes)?.label ??
-            "RouteLag"
+            "Zer0"
           }
           selectedCountry={
             resolveRouteOption(selectedRoute, routes)?.country ??
@@ -1287,12 +1549,13 @@ function AppContent() {
           </div>
         </div>
       )}
-      {authenticated && view === "stats" && !homeLoading && (
+      {canUseApp && view === "stats" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
         <StatsPage
@@ -1319,12 +1582,13 @@ function AppContent() {
           </div>
         </div>
       )}
-      {authenticated && view === "diagnostics" && !homeLoading && (
+      {canUseApp && view === "diagnostics" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
         <DiagnosticsPage
@@ -1342,12 +1606,13 @@ function AppContent() {
           </div>
         </div>
       )}
-      {authenticated && view === "profile" && !homeLoading && (
+      {canUseApp && view === "profile" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
         <ProfilePage
@@ -1369,60 +1634,73 @@ function AppContent() {
           </div>
         </div>
       )}
-      {authenticated && view === "replays" && !homeLoading && (
+      {canUseApp && REPLAY_ENABLED && view === "replays" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
-            <ReplayEnginePage />
+            <UpgradeGate
+              allowed={entitlements.hasReplays}
+              loaded={entitlements.isLoaded}
+              title="Replays are a Pro feature"
+              description="Subscribe to Pro to unlock unlimited replay parsing and PathGen insights."
+              onUpgrade={() => openView("billing")}
+            >
+              <ReplayEnginePage />
+            </UpgradeGate>
           </div>
         </div>
       )}
-      {authenticated && view === "hud" && !homeLoading && (
+      {canUseApp && HUD_ENABLED && view === "hud" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
             <HudOverlayPage />
           </div>
         </div>
       )}
-      {authenticated && view === "settings" && !homeLoading && (
+      {canUseApp && view === "settings" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
             <SettingsPage />
           </div>
         </div>
       )}
-      {authenticated && view === "billing" && !homeLoading && (
+      {canUseApp && view === "billing" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
             <AccountPage />
           </div>
         </div>
       )}
-      {authenticated && view === "help" && !homeLoading && (
+      {canUseApp && view === "help" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
         <HelpCenterPage
@@ -1437,12 +1715,13 @@ function AppContent() {
           </div>
         </div>
       )}
-      {authenticated && view === "logs" && !homeLoading && (
+      {canUseApp && view === "logs" && (
         <div className="home-dashboard">
           <AppSidebar
             active={activeNavItem(view)}
             onNavigate={openView}
             profileImageUrl={profileImageUrl}
+            pingLabel={navPingLabel}
           />
           <div className="app-page-slot">
         <LogsPage logs={logs} onBack={() => openView("stats")} />
@@ -1470,13 +1749,17 @@ function activeNavItem(view: MiniView): AppNavItem {
       return "hud";
     case "profile":
     case "billing":
-      return "profile";
+      return "settings";
     case "settings":
       return "settings";
     case "help":
-      return "help";
+      return "settings";
     case "replays":
       return "replays";
+    case "stats":
+    case "diagnostics":
+    case "logs":
+      return "analytics";
     default:
       return "dashboard";
   }
@@ -1487,19 +1770,49 @@ async function checkRouteLagEngine() {
 }
 
 function friendlyError(error: unknown): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
+    const code = (error as { code: string }).code;
+    switch (code) {
+      case "subscription_required":
+      case "invite_only_insufficient":
+        return "A Zer0 Pro subscription is required to start routing.";
+      case "subscription_expired":
+        return "Your Zer0 Pro subscription has expired. Renew to start routing.";
+      case "account_restricted":
+        return "This account is restricted from routing. Contact support if you need help.";
+      case "entitlement_unavailable":
+        return "Subscription verification is temporarily unavailable. Try again shortly.";
+      case "concurrent_session_limit":
+        return "Routing is already active on another device. End that session first.";
+      case "invalid_token":
+        return "Authorization expired. Sign in again and retry.";
+      default:
+        break;
+    }
+  }
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("administrator permission")) {
-    return "Administrator permission is required for this RouteLag Optimization action. Restart as Administrator and try again.";
+    return "Administrator permission is required for this Zer0 Optimization action. Restart as Administrator and try again.";
   }
   if (
     message.includes("WireGuard for Windows") ||
     message.includes("WireGuard is not installed") ||
     message.includes("missing or damaged") ||
-    message.includes("RouteLag Engine tooling is not installed")
+    message.includes("Engine tooling is not installed")
   ) {
-    return "RouteLag Engine is missing or damaged. Reinstall RouteLag.";
+    return "Zer0 Engine is missing or damaged. Reinstall Zer0.";
   }
   return message;
+}
+
+function isAdminPermissionError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return message.includes("administrator permission");
 }
 
 export default function App() {

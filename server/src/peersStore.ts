@@ -17,6 +17,7 @@ export class PeersStore {
   constructor(
     private readonly filePath: string,
     private readonly wgConfigPath: string,
+    private readonly localMirrorNodeIds: Set<string> = new Set(),
   ) {
     mkdirSync(dirname(filePath), { recursive: true });
   }
@@ -72,8 +73,12 @@ export class PeersStore {
     if (!this.wgConfigPath || !existsSync(this.wgConfigPath)) {
       return;
     }
+    const mirroredPeers =
+      this.localMirrorNodeIds.size > 0
+        ? peers.filter((peer) => this.localMirrorNodeIds.has(peer.nodeId))
+        : peers;
     const base = readBaseWgConfig(this.wgConfigPath);
-    const peerBlocks = peers.map(
+    const peerBlocks = mirroredPeers.map(
       (peer) =>
         `[Peer]\nPublicKey = ${peer.publicKey}\nAllowedIPs = ${peer.clientIp}\n`,
     );

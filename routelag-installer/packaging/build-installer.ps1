@@ -1,6 +1,6 @@
-# RouteLag Custom Installer Build Script
+# Zer0 Custom Installer Build Script
 #
-# Builds the custom Tauri bootstrapper (RouteLag-Beta-{Core,Full}-Setup.exe) by:
+# Builds the custom Tauri bootstrapper (Zer0-Beta-{Core,Full}-Setup.exe) by:
 #   1. Building routelag-desktop (release) and locating the Engine binaries.
 #   2. Optionally building routelag-hud (Full variant only).
 #   3. Building the two Rust binaries (routelag-uninstall, then routelag-setup with the
@@ -15,8 +15,11 @@
 #   .\build-installer.ps1 -Dev         - skip building routelag-desktop/engine/HUD; use existing output
 #   .\build-installer.ps1 -BuildHud    - also run `npm run build:windows` in routelag-hud first
 #
-# Environment variables (optional, same as the old NSIS build):
+# Environment variables (optional):
 #   WINDOWS_CERT_PATH, WINDOWS_CERT_PASSWORD, WINDOWS_SIGNING_ENABLED
+#
+# Signing is OFF by default. Unsigned builds must only be used for internal / trusted
+# private-beta testing. Do not publish or distribute publicly without Authenticode signing.
 
 param(
     [switch]$Core,
@@ -46,7 +49,7 @@ $EngineSrcDir = Join-Path $DesktopDir "src-tauri\engine\windows"
 $HudSrcDir = Join-Path $HudDir "build\win-unpacked"
 
 Write-Host ""
-Write-Host "=== RouteLag Installer Builder (custom Tauri bootstrapper) ===" -ForegroundColor Cyan
+Write-Host "=== Zer0 Installer Builder (custom Tauri bootstrapper) ===" -ForegroundColor Cyan
 Write-Host "Repo root:   $RepoRoot"
 Write-Host "App output:  $AppSrcDir"
 Write-Host "Engine dir:  $EngineSrcDir"
@@ -62,18 +65,23 @@ if (-not $Dev) {
         $env:VITE_ROUTELAG_BETA_MODE = "dallas"
         Write-Host "Beta Dallas API: $DallasBetaApiUrl" -ForegroundColor DarkGray
     }
+    # Temporarily disable HUD + Replay Engine UI in shipped desktop builds.
+    $env:VITE_ROUTELAG_ENABLE_HUD = "false"
+    $env:VITE_ROUTELAG_ENABLE_REPLAY = "false"
+    $desktopCargoFeatures = "custom-protocol,disable-hud"
+    Write-Host "Desktop features: HUD=off, Replay=off" -ForegroundColor DarkGray
     Push-Location $DesktopDir
     try {
         npm.cmd run build
         if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
         $desktopDist = Join-Path $DesktopDir "dist\index.html"
         if (-not (Test-Path $desktopDist)) {
-            throw "Desktop frontend dist missing at $desktopDist - cannot embed UI into RouteLag.exe."
+            throw "Desktop frontend dist missing at $desktopDist - cannot embed UI into Zer0.exe."
         }
         # custom-protocol embeds frontendDist; without it the release binary still loads
         # http://127.0.0.1:1420 and shows ERR_CONNECTION_REFUSED.
         cargo clean -p routelag-desktop --manifest-path src-tauri\Cargo.toml
-        cargo build --release --features custom-protocol --manifest-path src-tauri\Cargo.toml
+        cargo build --release --features $desktopCargoFeatures --manifest-path src-tauri\Cargo.toml
         if ($LASTEXITCODE -ne 0) { throw "cargo build failed for routelag-desktop" }
     } finally {
         Pop-Location
@@ -196,6 +204,8 @@ function New-PayloadZip {
     New-Item -ItemType Directory -Force $appDir | Out-Null
     New-Item -ItemType Directory -Force $engineDir | Out-Null
 
+    Copy-Item $appExe (Join-Path $appDir "Zer0.exe")
+    # Compatibility alias for upgrades / recovery tools that still look for RouteLag.exe
     Copy-Item $appExe (Join-Path $appDir "RouteLag.exe")
     $resourcesDir = Join-Path $AppSrcDir "resources"
     if (Test-Path $resourcesDir) {
@@ -266,7 +276,7 @@ function Build-Variant {
     $outFile = if ($OutFileName) {
         Join-Path $OutputDir $OutFileName
     } else {
-        Join-Path $OutputDir "RouteLag-Beta-$Variant-Setup.exe"
+        Join-Path $OutputDir "Zer0-Beta-$Variant-Setup.exe"
     }
     if (Test-Path $outFile) { Remove-Item $outFile -Force }
     Copy-Item $setupExeSrc $outFile
@@ -282,7 +292,7 @@ function Build-Variant {
     Write-Host "  Output: $outFile ($size MB)" -ForegroundColor Green
 
     if ($Variant -eq "Core") {
-        $aliasFile = Join-Path $OutputDir "RouteLagSetup.exe"
+        $aliasFile = Join-Path $OutputDir "Zer0Setup.exe"
         Copy-Item $outFile $aliasFile -Force
         Write-Host "  Alias:  $aliasFile" -ForegroundColor Green
     }
@@ -294,21 +304,21 @@ if ($BetaDallas) {
         $env:VITE_ROUTELAG_API_URL = $DallasBetaApiUrl
         $env:VITE_ROUTELAG_BETA_MODE = "dallas"
     }
-    Build-Variant -Variant "Dallas" -IncludeHud $false -OutFileName "RouteLag-Beta-Dallas-Setup.exe"
+    Build-Variant -Variant "Dallas" -IncludeHud $false -OutFileName "Zer0-Beta-Dallas-Setup.exe"
     $readmePath = Join-Path $OutputDir "README-BETA-TESTERS.txt"
     @"
-RouteLag Beta Dallas Build — Tester Guide
-=========================================
+Zer0 Beta Dallas Build — Tester Guide
+=====================================
 
 Install
 -------
-1. Run RouteLag-Beta-Dallas-Setup.exe
+1. Run Zer0-Beta-Dallas-Setup.exe
 2. Windows may show an unsigned beta warning — choose Run anyway
-3. Complete the installer and click Finish to launch RouteLag
+3. Complete the installer and click Finish to launch Zer0
 
 Launch
 ------
-1. Launch RouteLag normally — Windows will prompt for administrator permission
+1. Launch Zer0 normally — Windows will prompt for administrator permission
    (required for Start Optimization and Restore Internet)
 
 Sign in
@@ -326,7 +336,7 @@ Test routing
 
 Report back
 -----------
-Send ping, packet loss, errors, and screenshots to the RouteLag beta team.
+Send ping, packet loss, errors, and screenshots to the Zer0 beta team.
 
 API endpoint baked into this build:
 $DallasBetaApiUrl
@@ -338,6 +348,15 @@ $DallasBetaApiUrl
     Get-ChildItem $OutputDir -Filter "*Dallas*" | ForEach-Object {
         $size = [math]::Round($_.Length / 1MB, 1)
         Write-Host ("  {0}  ({1} MB)" -f $_.Name, $size)
+    }
+    $signingEnabled = $env:WINDOWS_SIGNING_ENABLED -eq "true"
+    if (-not $signingEnabled) {
+        Write-Host ""
+        Write-Host "UNSIGNED BUILD WARNING - private-beta only; do not publish." -ForegroundColor Yellow
+    }
+    $inspectScript = Join-Path $PackagingDir "inspect-artifact-safety.ps1"
+    if (Test-Path $inspectScript) {
+        & powershell -ExecutionPolicy Bypass -File $inspectScript -OutputDir $OutputDir
     }
     return
 }
@@ -365,4 +384,50 @@ Write-Host "Installers in: $OutputDir"
 Get-ChildItem $OutputDir -Filter "*.exe" | ForEach-Object {
     $size = [math]::Round($_.Length / 1MB, 1)
     Write-Host ("  {0}  ({1} MB)" -f $_.Name, $size)
+}
+
+$signingEnabled = $env:WINDOWS_SIGNING_ENABLED -eq "true"
+if (-not $signingEnabled) {
+    Write-Host ""
+    Write-Host "UNSIGNED BUILD WARNING" -ForegroundColor Yellow
+    Write-Host "  Authenticode signing was skipped. Safe for internal / trusted private-beta only." -ForegroundColor Yellow
+    Write-Host "  Do not publish this build. SmartScreen warnings are expected." -ForegroundColor Yellow
+}
+
+$privateBetaReadme = Join-Path $OutputDir "README-PRIVATE-BETA.txt"
+@"
+Zer0 Private-Beta Installer - Tester Notes
+==========================================
+
+UNSIGNED BUILD
+--------------
+This setup EXE is typically unsigned. Windows may show SmartScreen / Defender
+warnings. Only run it if you received it directly from the Zer0 team.
+
+ADMINISTRATOR PERMISSION
+------------------------
+Installing to Program Files requires a UAC prompt. Starting Optimization and
+Restore Internet also require administrator permission.
+
+MANUAL UPDATES
+--------------
+Auto-update is disabled. To update: Restore Internet, quit Zer0, run the newer
+setup EXE, then relaunch. Do not install update EXEs from unofficial sources.
+
+UNINSTALL
+---------
+Use Apps and Features -> Zer0 Beta, or Start Menu -> Zer0 -> Uninstall Zer0.
+Uninstall disconnects Zer0/RouteLag owned tunnels only - it does not remove
+other WireGuard or VPN software. User data is kept unless you opt in to wipe.
+
+SUPPORT
+-------
+See routelag-desktop/docs/WINDOWS-INSTALL.md in the repo for packaging details.
+"@ | Set-Content -Path $privateBetaReadme -Encoding UTF8
+Write-Host "  Readme: $privateBetaReadme" -ForegroundColor Green
+
+$inspectScript = Join-Path $PackagingDir "inspect-artifact-safety.ps1"
+if (Test-Path $inspectScript) {
+    Write-Host ""
+    & powershell -ExecutionPolicy Bypass -File $inspectScript -OutputDir $OutputDir
 }

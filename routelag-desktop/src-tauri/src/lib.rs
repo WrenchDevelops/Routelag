@@ -4,6 +4,7 @@ mod config;
 mod diagnostics;
 mod elevation;
 mod export;
+mod external_url;
 mod health;
 mod hud_bridge;
 mod hud_layout;
@@ -25,7 +26,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::window::Color;
-use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -218,7 +219,7 @@ fn connect_tunnel(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
 
     state.logs.info("Connecting tunnel...");
-    match tunnel::connect_tunnel(&state.app_data_dir, &state.engine) {
+    match tunnel::connect_tunnel(&state.app_data_dir, &state.engine, &state.logs) {
         Ok(()) => {
             reset_stability(&state.stability);
             state.logs.info("Tunnel connect command completed.");
@@ -237,16 +238,18 @@ fn disconnect_tunnel(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
 
     state.logs.info("Disconnecting tunnel...");
-    match tunnel::disconnect_tunnel(&state.engine) {
-        Ok(()) => {
-            reset_stability(&state.stability);
-            state.logs.info("Tunnel disconnected.");
-            Ok(())
-        }
-        Err(e) => {
-            state.logs.error(&format!("Disconnect failed: {e}"));
-            Err(e.to_string())
-        }
+    // Full local cleanup is idempotent and verifies Windows state.
+    let result = cleanup::safe_shutdown_routing(&state.app_data_dir, &state.engine, &state.logs);
+    reset_stability(&state.stability);
+    if result.ok {
+        state.logs.info("Tunnel disconnected.");
+        Ok(())
+    } else {
+        state.logs.error(&format!(
+            "Disconnect completed with gaps: {}",
+            result.summary
+        ));
+        Err(result.summary)
     }
 }
 
@@ -255,7 +258,7 @@ fn reconnect_tunnel_cmd(state: tauri::State<'_, AppState>) -> Result<(), String>
     app_state(state.clone())?;
     let _guard = state.connect_lock.lock().map_err(|e| e.to_string())?;
     state.logs.info("Reconnecting tunnel...");
-    match reconnect_tunnel(&state.app_data_dir, &state.engine) {
+    match reconnect_tunnel(&state.app_data_dir, &state.engine, &state.logs) {
         Ok(()) => {
             reset_stability(&state.stability);
             state.logs.info("Tunnel reconnected.");
@@ -604,14 +607,41 @@ fn hide_hud_overlay(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 fn shutdown_background_services(app: &tauri::AppHandle) {
+    // Stops the localhost HUD bridge + desktop preview only.
+    // Does not terminate RouteLagHUD.exe / Zer0HUD.exe (separate free Overwolf app).
     if let Some(state) = app.try_state::<AppState>() {
         state.hud_bridge.stop();
     }
     let _ = hide_hud_overlay(app);
 }
 
+/// Best-effort verified local routing disconnect on normal exit/close.
+/// Does not claim to cover force-kill or power loss — startup recovery covers those.
+fn shutdown_routing_safely(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(_guard) = state.connect_lock.lock() {
+            let result =
+                cleanup::safe_shutdown_routing(&state.app_data_dir, &state.engine, &state.logs);
+            if result.ok {
+                state.logs.info("Exit cleanup: local routing restored or already safe.");
+            } else {
+                state.logs.warn(&format!(
+                    "Exit cleanup: incomplete local restore. {}",
+                    result.summary
+                ));
+            }
+            reset_stability(&state.stability);
+        } else {
+            state
+                .logs
+                .warn("Exit cleanup: connect lock poisoned; skipping routing shutdown.");
+        }
+    }
+}
+
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
+    shutdown_routing_safely(&app);
     shutdown_background_services(&app);
     app.exit(0);
 }
@@ -715,7 +745,7 @@ fn load_route_test(state: tauri::State<'_, AppState>) -> Option<RouteTestResult>
 fn read_logs(state: tauri::State<'_, AppState>) -> Result<String, String> {
     app_state(state.clone())?;
     let status = tunnel::route_lag_service_status_snippet(&state.engine);
-    let header = format!("RouteLag Beta v{}\n", app_version());
+    let header = format!("Zer0 v{}\n", app_version());
     state
         .logs
         .read_logs_with_header(Some(&header), Some(&status))
@@ -734,11 +764,12 @@ fn reset_app(state: tauri::State<'_, AppState>) -> Result<(), String> {
 
     let status = tunnel::tunnel_status();
     if (status.is_connected() || status.is_connecting()) && elevation::is_elevated() {
-        let _ = tunnel::disconnect_tunnel(&state.engine);
+        let _ = cleanup::safe_shutdown_routing(&state.app_data_dir, &state.engine, &state.logs);
     }
 
     config::remove_config(&state.app_data_dir).ok();
     route_session::clear_active_route_session(&state.app_data_dir).ok();
+    let _ = cleanup::clear_routing_marker(&state.app_data_dir);
     network::remove_route_test(&state.app_data_dir);
     diagnostics::remove_diagnostics(&state.app_data_dir);
     state.logs.clear().ok();
@@ -757,6 +788,14 @@ fn open_logs_folder(
             state.app_data_dir.to_string_lossy().to_string(),
             None::<&str>,
         )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let allowed = external_url::validate_external_url(&url)?;
+    app.opener()
+        .open_url(allowed, None::<&str>)
         .map_err(|e| e.to_string())
 }
 
@@ -844,19 +883,26 @@ fn build_and_run_app() -> Result<(), Box<dyn std::error::Error>> {
             let engine = RouteLagEngine::new(resource_dir.clone());
             let hud_bridge = HudBridgeState::new(&app_data_dir);
 
-            // Optional local bridge — never block app open if the port is busy.
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                hud_bridge.start();
-            })) {
-                Ok(()) => startup::write_startup_log("hud bridge start requested"),
-                Err(_) => {
-                    startup::write_startup_log("hud bridge start panicked; continuing without it");
-                    logs.warn("HUD bridge failed to start; continuing without live HUD ingest.");
+            #[cfg(not(feature = "disable-hud"))]
+            {
+                // Optional local bridge — never block app open if the port is busy.
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    hud_bridge.start();
+                })) {
+                    Ok(()) => startup::write_startup_log("hud bridge start requested"),
+                    Err(_) => {
+                        startup::write_startup_log("hud bridge start panicked; continuing without it");
+                        logs.warn("HUD bridge failed to start; continuing without live HUD ingest.");
+                    }
                 }
+            }
+            #[cfg(feature = "disable-hud")]
+            {
+                startup::write_startup_log("hud bridge disabled at build time");
             }
 
             let version = app_version();
-            logs.info(&format!("RouteLag Beta v{version} started."));
+            logs.info(&format!("Zer0 v{version} started."));
             logs.info(&format!(
                 "Startup health: current_dir={}, exe={}, resources_dir={}, app_data_dir={}, api_url={}, frontend_url={}",
                 std::env::current_dir()
@@ -924,7 +970,7 @@ fn build_and_run_app() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             app.manage(AppState {
-                app_data_dir,
+                app_data_dir: app_data_dir.clone(),
                 engine,
                 hud_bridge,
                 logs,
@@ -932,14 +978,23 @@ fn build_and_run_app() -> Result<(), Box<dyn std::error::Error>> {
                 stability: Mutex::new(StabilityTracker::default()),
             });
 
-            let handle = app.handle().clone();
-            if let Some(window) = app.get_webview_window("main") {
-                window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { .. } = event {
-                        shutdown_background_services(&handle);
-                    }
-                });
+            if let Some(state) = app.try_state::<AppState>() {
+                let recovery = cleanup::startup_recover_stale_routing(
+                    &state.app_data_dir,
+                    &state.engine,
+                    &state.logs,
+                );
+                startup::write_startup_log(&format!(
+                    "startup_recovery stale={} elevated={} service_running={} marker={}",
+                    recovery.stale_state_detected,
+                    recovery.is_elevated,
+                    recovery.route_service_running,
+                    recovery.routing_marker_present
+                ));
             }
+
+            // Close can be cancelled by the frontend confirmation dialog.
+            // Routing/HUD teardown runs in exit_app and ExitRequested only.
 
             startup::write_startup_log("setup complete");
             Ok(())
@@ -1018,6 +1073,7 @@ fn build_and_run_app() -> Result<(), Box<dyn std::error::Error>> {
             clear_logs,
             reset_app,
             open_logs_folder,
+            open_external_url,
             install_info::get_install_info_cmd,
             install_info::launch_hud_installer_cmd,
             exit_app,
@@ -1025,6 +1081,7 @@ fn build_and_run_app() -> Result<(), Box<dyn std::error::Error>> {
         .build(tauri::generate_context!())?
         .run(|app_handle, event| {
             if let RunEvent::ExitRequested { .. } = event {
+                shutdown_routing_safely(&app_handle);
                 shutdown_background_services(&app_handle);
             }
         });

@@ -15,7 +15,7 @@ use crate::registry::{self, InstallMetadata};
 use crate::shortcuts;
 use crate::spec::{AddHudJob, InstallJob, ProgressLine};
 
-const APP_PROCESS_NAME: &str = "RouteLag.exe";
+const APP_PROCESS_NAMES: &[&str] = &["Zer0.exe", "RouteLag.exe", "RouteLag Beta.exe"];
 
 fn emit(progress_file: &str, line: ProgressLine) {
     let Ok(json) = serde_json::to_string(&line) else { return };
@@ -80,28 +80,32 @@ fn run_embedded_install_inner(job: &InstallJob, uninstaller_bytes: &[u8]) -> Res
     let progress_file = job.progress_file.as_str();
 
     emit(progress_file, ProgressLine::step("prepare", "Preparing files", 3));
-    process_kill::kill_by_name(APP_PROCESS_NAME);
-    process_kill::kill_by_name("RouteLag Beta.exe");
+    for name in APP_PROCESS_NAMES {
+        process_kill::kill_by_name(name);
+    }
     process_kill::kill_by_name("RouteLagHUD.exe");
+    process_kill::kill_by_name("Zer0HUD.exe");
+    // Ensure a failed/interrupted prior session cannot leave owned tunnels active while files are replaced.
+    crate::network_cleanup::disconnect_owned_networking(Some(&install_dir));
     std::fs::create_dir_all(&install_dir).map_err(|e| format!("could not create {}: {e}", install_dir.display()))?;
 
     let mut archive = payload::open_archive()?;
 
     if job.include_app {
-        emit(progress_file, ProgressLine::step("app", "Installing RouteLag App", 10));
+        emit(progress_file, ProgressLine::step("app", "Installing Zer0 App", 10));
         payload::extract_prefixed(&mut archive, "app", &install_dir, |done, total| {
             let pct = 10 + scale(done, total, 25);
-            emit(progress_file, ProgressLine::step("app", "Installing RouteLag App", pct));
+            emit(progress_file, ProgressLine::step("app", "Installing Zer0 App", pct));
         })?;
     }
 
     let mut engine_installed = false;
     if job.include_engine {
-        emit(progress_file, ProgressLine::step("engine", "Installing RouteLag Engine", 35));
+        emit(progress_file, ProgressLine::step("engine", "Installing Zer0 Engine", 35));
         let engine_dir = install_dir.join("engine");
         payload::extract_prefixed(&mut archive, "engine", &engine_dir, |done, total| {
             let pct = 35 + scale(done, total, 20);
-            emit(progress_file, ProgressLine::step("engine", "Installing RouteLag Engine", pct));
+            emit(progress_file, ProgressLine::step("engine", "Installing Zer0 Engine", pct));
         })?;
         engine_installed = true;
     } else if let Some(existing) = registry::read_existing_install() {
@@ -118,7 +122,7 @@ fn run_embedded_install_inner(job: &InstallJob, uninstaller_bytes: &[u8]) -> Res
             emit(progress_file, ProgressLine::step("hud", "Installing HUD Runtime", pct));
         })?;
         if !hud_dir.join("RouteLagHUD.exe").exists() {
-            return Err("RouteLag HUD Runtime payload did not contain RouteLagHUD.exe.".to_string());
+            return Err("Zer0 HUD Runtime payload did not contain RouteLagHUD.exe.".to_string());
         }
         hud_installed = true;
         hud_path = Some(hud_dir.join("RouteLagHUD.exe").display().to_string());
@@ -163,16 +167,17 @@ fn run_embedded_install_inner(job: &InstallJob, uninstaller_bytes: &[u8]) -> Res
 
     if job.include_desktop_shortcut || job.include_start_menu_shortcut {
         emit(progress_file, ProgressLine::step("shortcuts", "Creating shortcuts", 96));
-        let app_exe = if install_dir.join("RouteLag.exe").exists() {
-            install_dir.join("RouteLag.exe")
-        } else {
-            install_dir.join("RouteLag Beta.exe")
-        };
-        if job.include_desktop_shortcut {
-            let _ = shortcuts::create_desktop_shortcut(&app_exe, &public_desktop_dir());
-        }
-        if job.include_start_menu_shortcut {
-            let _ = shortcuts::create_start_menu_shortcuts(&app_exe, &uninstall_path, &common_start_menu_dir());
+        if let Some(app_exe) = registry::resolve_app_exe(&install_dir) {
+            if job.include_desktop_shortcut {
+                let _ = shortcuts::create_desktop_shortcut(&app_exe, &public_desktop_dir());
+            }
+            if job.include_start_menu_shortcut {
+                let _ = shortcuts::create_start_menu_shortcuts(
+                    &app_exe,
+                    &uninstall_path,
+                    &common_start_menu_dir(),
+                );
+            }
         }
     }
 
@@ -250,10 +255,13 @@ fn run_online_install_inner(job: &InstallJob, uninstaller_bytes: &[u8]) -> Resul
         staged_components.push(("hud", staging.join("hudRuntime")));
     }
 
-    emit(progress_file, ProgressLine::step("stop", "Stopping RouteLag", 62));
-    process_kill::kill_by_name(APP_PROCESS_NAME);
-    process_kill::kill_by_name("RouteLag Beta.exe");
+    emit(progress_file, ProgressLine::step("stop", "Stopping Zer0", 62));
+    for name in APP_PROCESS_NAMES {
+        process_kill::kill_by_name(name);
+    }
     process_kill::kill_by_name("RouteLagHUD.exe");
+    process_kill::kill_by_name("Zer0HUD.exe");
+    crate::network_cleanup::disconnect_owned_networking(Some(&install_dir));
 
     let backup = if job.include_app {
         fs_ops::backup_existing(&install_dir)?
@@ -265,11 +273,11 @@ fn run_online_install_inner(job: &InstallJob, uninstaller_bytes: &[u8]) -> Resul
         for (kind, staged_dir) in &staged_components {
             match *kind {
                 "app" => {
-                    emit(progress_file, ProgressLine::step("app", "Installing RouteLag App", 68));
+                    emit(progress_file, ProgressLine::step("app", "Installing Zer0 App", 68));
                     fs_ops::copy_dir_contents(staged_dir, &install_dir)?;
                 }
                 "engine" => {
-                    emit(progress_file, ProgressLine::step("engine", "Installing RouteLag Engine", 76));
+                    emit(progress_file, ProgressLine::step("engine", "Installing Zer0 Engine", 76));
                     fs_ops::copy_dir_contents(staged_dir, &install_dir.join("engine"))?;
                 }
                 "hud" => {
@@ -331,13 +339,18 @@ fn run_online_install_inner(job: &InstallJob, uninstaller_bytes: &[u8]) -> Resul
 
     if job.include_desktop_shortcut || job.include_start_menu_shortcut {
         emit(progress_file, ProgressLine::step("shortcuts", "Creating shortcuts", 96));
-        let app_exe = install_dir.join("RouteLag.exe");
         let uninstall_path = install_dir.join("uninstall.exe");
-        if job.include_desktop_shortcut {
-            shortcuts::create_desktop_shortcut(&app_exe, &public_desktop_dir())?;
-        }
-        if job.include_start_menu_shortcut {
-            shortcuts::create_start_menu_shortcuts(&app_exe, &uninstall_path, &common_start_menu_dir())?;
+        if let Some(app_exe) = registry::resolve_app_exe(&install_dir) {
+            if job.include_desktop_shortcut {
+                shortcuts::create_desktop_shortcut(&app_exe, &public_desktop_dir())?;
+            }
+            if job.include_start_menu_shortcut {
+                shortcuts::create_start_menu_shortcuts(
+                    &app_exe,
+                    &uninstall_path,
+                    &common_start_menu_dir(),
+                )?;
+            }
         }
     }
 
@@ -393,7 +406,9 @@ fn run_add_hud_inner(job: &AddHudJob) -> Result<(), String> {
     let progress_file = job.progress_file.as_str();
 
     emit(progress_file, ProgressLine::step("prepare", "Preparing files", 5));
-    process_kill::kill_by_name(APP_PROCESS_NAME);
+    for name in APP_PROCESS_NAMES {
+        process_kill::kill_by_name(name);
+    }
 
     let mut archive = payload::open_archive()?;
     let hud_dir = install_dir.join("hud");
@@ -428,19 +443,19 @@ fn should_use_embedded_payload(job: &InstallJob) -> bool {
 }
 
 fn verify_installed_files(install_dir: &Path, job: &InstallJob) -> Result<(), String> {
-    if job.include_app && !install_dir.join("RouteLag.exe").exists() && !install_dir.join("RouteLag Beta.exe").exists() {
-        return Err("RouteLag application file was not installed.".to_string());
+    if job.include_app && registry::resolve_app_exe(install_dir).is_none() {
+        return Err("Zer0 application file was not installed.".to_string());
     }
     if job.include_engine {
         let engine_dir = install_dir.join("engine");
         let has_engine_binary = engine_dir.join("RouteLagEngine.exe").exists()
             || engine_dir.join("routelag-wg.exe").exists();
         if !has_engine_binary {
-            return Err("RouteLag Engine files were not installed.".to_string());
+            return Err("Zer0 Engine files were not installed.".to_string());
         }
     }
     if job.include_hud && !install_dir.join("hud").join("RouteLagHUD.exe").exists() {
-        return Err("RouteLag HUD Runtime file was not installed.".to_string());
+        return Err("Zer0 HUD Runtime file was not installed.".to_string());
     }
     Ok(())
 }

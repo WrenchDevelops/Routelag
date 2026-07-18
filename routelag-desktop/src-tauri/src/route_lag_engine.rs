@@ -8,7 +8,7 @@ use crate::config::TUNNEL_NAME;
 use crate::windows_process::{hidden_command, hidden_command_program, hidden_command_program_with_stdin};
 
 pub const ENGINE_MISSING_MESSAGE: &str =
-    "RouteLag Engine is missing or damaged. Reinstall RouteLag.";
+    "Zer0 Engine is missing or damaged. Reinstall Zer0.";
 pub const BUNDLED_ENGINE_MISSING_WARNING: &str =
     "Bundled RouteLag Engine binaries are missing from src-tauri/engine/windows.";
 

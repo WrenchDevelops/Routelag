@@ -16,7 +16,7 @@ export function Sidebar({
 
   return (
     <nav className="sidebar" aria-label="Installation steps">
-      <div className="sidebar-brand">RouteLag</div>
+      <div className="sidebar-brand">Zer0</div>
       <ol className="sidebar-steps">
         {steps.map((step, index) => {
           const state = index < currentIndex ? "done" : index === currentIndex ? "active" : "upcoming";
@@ -30,7 +30,7 @@ export function Sidebar({
           );
         })}
       </ol>
-      <div className="sidebar-footer">RouteLag Beta v{version}</div>
+      <div className="sidebar-footer">Zer0 Beta v{version}</div>
     </nav>
   );
 }

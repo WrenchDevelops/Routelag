@@ -1,4 +1,4 @@
-export interface ConfigIdentity {
+﻿export interface ConfigIdentity {
   original_filename: string;
   address: string | null;
   endpoint: string | null;
@@ -89,6 +89,7 @@ export type OptimizeState =
   | "starting_engine"
   | "verifying_connection"
   | "optimized"
+  | "degraded"
   | "stopping"
   | "rollback"
   | "error";
@@ -144,6 +145,9 @@ export interface RestoreInternetResult {
   ok: boolean;
   reboot_required: boolean;
   steps: RestoreStepResult[];
+  summary?: string;
+  restored?: string[];
+  not_restored?: string[];
 }
 
 export interface TunnelServiceStatus {
@@ -164,6 +168,8 @@ export interface RecoveryStatus {
   route_service_installed: boolean;
   route_service_running: boolean;
   last_cleanup_result: RestoreInternetResult | null;
+  routing_marker_present?: boolean;
+  dns_backup_present?: boolean;
 }
 
 export interface InlineError {
@@ -279,6 +285,18 @@ export interface FortniteReplay {
   path: string;
   modified_at: string;
   size_bytes: number;
+}
+
+/** Home dashboard row: local file metadata optionally enriched with PathGen stats. */
+export interface HomeReplayCard {
+  id: string;
+  name: string;
+  path?: string;
+  modified_at: string;
+  placement?: number | null;
+  eliminations?: number | null;
+  damageDealt?: number | null;
+  parsed: boolean;
 }
 
 export interface LocalReplayFile extends FortniteReplay {
@@ -615,10 +633,10 @@ export const defaultLifecycleStressStatus = (): LifecycleStressStatus => ({
 });
 
 export const BETA_DISCLAIMER =
-  "RouteLag Beta is a network routing test tool. It does not modify Fortnite, inject into Fortnite, or interact with anti-cheat. RouteLag is not affiliated with Epic Games or Fortnite. VPN/proxy routing can sometimes cause login or connection issues; disconnect RouteLag if that happens.";
+  "Zer0 is a network routing test tool. It does not modify Fortnite, inject into Fortnite, or interact with anti-cheat. Zer0 is not affiliated with Epic Games or Fortnite. VPN/proxy routing can sometimes cause login or connection issues; disconnect Zer0 if that happens.";
 
 export const PRIVACY_WARNING =
-  "This report may include your public IP, ISP/network info, ping results, and RouteLag tunnel status. Do not share it publicly.";
+  "This report may include your public IP, ISP/network info, ping results, and Zer0 tunnel status. Do not share it publicly.";
 
 // ---- Auto Route types ----
 

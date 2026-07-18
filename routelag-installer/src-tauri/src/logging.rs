@@ -3,17 +3,46 @@ use std::path::PathBuf;
 
 fn log_path() -> Option<PathBuf> {
     let local_appdata = std::env::var_os("LOCALAPPDATA")?;
-    Some(PathBuf::from(local_appdata).join("RouteLag").join("logs").join("installer.log"))
+    // Prefer Zer0; also ensure parent exists for dual support tooling.
+    Some(
+        PathBuf::from(local_appdata)
+            .join("Zer0")
+            .join("logs")
+            .join("installer.log"),
+    )
 }
 
-pub fn append(line: &str) {
-    let Some(path) = log_path() else { return };
+fn legacy_log_path() -> Option<PathBuf> {
+    let local_appdata = std::env::var_os("LOCALAPPDATA")?;
+    Some(
+        PathBuf::from(local_appdata)
+            .join("RouteLag")
+            .join("logs")
+            .join("installer.log"),
+    )
+}
+
+fn append_to(path: &std::path::Path, line: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let timestamp = timestamp();
-        let _ = writeln!(file, "[{timestamp}] {line}");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let stamp = timestamp();
+        let _ = writeln!(file, "[{stamp}] {line}");
+    }
+}
+
+pub fn append(line: &str) {
+    if let Some(path) = log_path() {
+        append_to(&path, line);
+    }
+    // Mirror to legacy RouteLag log path for support continuity during rebrand.
+    if let Some(path) = legacy_log_path() {
+        append_to(&path, line);
     }
 }
 

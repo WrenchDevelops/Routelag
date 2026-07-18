@@ -1,12 +1,12 @@
 {
   "name": "routelag-hud",
   "version": "0.1.0",
-  "description": "RouteLag HUD Runtime for Fortnite live data and in-game overlay.",
+  "description": "Zer0 HUD Runtime for Fortnite live data and in-game overlay (free, separate from Zer0 routing).",
   "main": "dist/main/main.js",
   "private": true,
   "type": "module",
   "author": {
-    "name": "RouteLag"
+    "name": "Zer0"
   },
   "productName": "RouteLagHUD",
   "overwolf": {

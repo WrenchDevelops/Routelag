@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window — restricted opener scopes; no shell exec from webview",
   "windows": ["main", "hud-overlay"],
   "permissions": [
     "core:default",
@@ -12,7 +12,36 @@
     "fs:default",
     "fs:allow-appdata-read-recursive",
     "fs:allow-appdata-write-recursive",
-    "opener:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://routelag.com/*" },
+        { "url": "https://www.routelag.com/*" },
+        { "url": "https://*.routelag.com/*" },
+        { "url": "https://discord.com/*" },
+        { "url": "https://*.discord.com/*" },
+        { "url": "https://discordapp.com/*" },
+        { "url": "https://*.discordapp.com/*" },
+        { "url": "https://discord.gg/*" },
+        { "url": "https://epicgames.com/*" },
+        { "url": "https://www.epicgames.com/*" },
+        { "url": "https://*.epicgames.com/*" },
+        { "url": "https://clerk.com/*" },
+        { "url": "https://*.clerk.com/*" },
+        { "url": "https://*.clerk.accounts.dev/*" },
+        { "url": "https://*.accounts.dev/*" },
+        { "url": "mailto:*" }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$LOCALAPPDATA/Zer0/**" },
+        { "path": "$LOCALAPPDATA/RouteLag/**" },
+        { "path": "$APPLOCALDATA/**" }
+      ]
+    },
     "global-shortcut:default",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-set-focus"
