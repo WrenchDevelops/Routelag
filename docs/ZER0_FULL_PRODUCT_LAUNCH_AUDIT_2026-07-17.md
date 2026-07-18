@@ -1794,3 +1794,120 @@ Final controls: maintenance off, routing enabled, Dallas enabled, Ashburn/Johann
 ---
 
 *End of audit report — 2026-07-17/18 (sections A–T prior; **U Prompt 15 final gate re-audit** — trusted private beta **Failed**; verdict **Ready for internal testing only**)*
+
+## W. Core installer rebuild and Windows safety-gate preparation - 2026-07-17/18
+
+This section appends the evidence produced after the hardened Dallas deployment was verified. No Dallas or Ashburn configuration was modified during this work. No installer was launched or published, and no local routes, DNS settings, services, adapters, firewall rules, or registry entries were changed.
+
+### W1. Source freeze and secret boundary
+
+- [x] Verified live - Main repository branch `main` frozen at commit `f69ec19dee8b1893324b03940adf0ff390b017a0`, message `Prepare Zer0 Core beta safety build`.
+- [x] Verified live - Main repository was clean after the source commit and before the release build (`main` ahead of `origin/main` by one local commit).
+- [x] Verified live - Separately versioned PathGen repository was clean at `6947ebc923ab7dbd9865ed748748d2d7b722b37c`.
+- [x] Verified live - Root `node_modules`, generated `*.tgz` deployment bundles, local environment files, and the separately versioned PathGen checkout are excluded from the main repository.
+- [x] Verified live - `CLERK_SECRET_KEY` was removed from ignored `routelag-desktop/.env.local`; only public Vite configuration remains in that desktop file.
+- [x] Verified live - Staged-source scans found no Clerk secret literal, private-key header, or JWT-shaped test token. Local `.env` files remained ignored and were not committed.
+- [~] Verified locally only - `gitleaks` and `trufflehog` were not installed. Equivalent targeted source and artifact signature scans were run, but this is not a substitute for a dedicated full-history secret scanner.
+
+### W2. Automated build evidence
+
+| Check | Result |
+|---|---|
+| Server dependency install / production audit | [x] Pass; 0 vulnerabilities |
+| Server tests | [x] 46/46 |
+| Server TypeScript build | [x] Pass |
+| PathGen dependency install / production audit | [x] Pass; 0 vulnerabilities |
+| PathGen tests | [x] 24/24 |
+| PathGen TypeScript build | [x] Pass |
+| Desktop dependency install | [x] Pass |
+| Desktop tests | [x] 32/32 |
+| Desktop TypeScript and production frontend build | [x] Pass |
+| Desktop Rust tests | [x] 17/17 |
+| Desktop Rust clean release build | [x] Pass |
+| Installer dependency install / audit | [x] Pass; 0 vulnerabilities |
+| Installer TypeScript and frontend build | [x] Pass |
+| Installer Rust tests | [x] 5/5 |
+| Installer Rust clean release builds | [x] Pass |
+| Core-only packaging | [x] Pass; HUD and Replay disabled by explicit build flags |
+| Desktop production dependency audit | [~] 12 moderate, 0 high, 0 critical; fix currently requires a breaking Clerk UI dependency change |
+| Source maps | [x] None in desktop production output |
+
+The Core build explicitly set Dallas beta mode, the Dallas API endpoint, HUD disabled, Replay disabled, and signing disabled. It used Tauri `custom-protocol` with embedded frontend assets. Artifact inspection found the literal `127.0.0.1:1430` from the installer development configuration in the setup and uninstaller binaries. This is not a demonstrated runtime dependency, but only a clean-machine packaged launch can close that gate.
+
+### W3. Artifact record
+
+| Artifact | Absolute path | SHA256 | Size | Built from commit | Signed |
+|---|---|---|---:|---|---|
+| Core installer | `C:\Users\bende\OneDrive\Desktop\Lunery\Routelag\Routelag\routelag-desktop\dist\installers\Zer0-Beta-Core-Setup.exe` | `7222B78B3253A804D471C057E02E644428DC2322679CE746F54ED3B3DEAD29B1` | 52,552,037 | `f69ec19dee8b1893324b03940adf0ff390b017a0` | No |
+| Desktop executable | `C:\Users\bende\OneDrive\Desktop\Lunery\Routelag\Routelag\routelag-desktop\src-tauri\target\release\routelag-desktop.exe` | `725A5C87B8C94668AE55B637A75516FC36379B80C77809E36612A2DEC3BC8C30` | 24,671,744 | `f69ec19dee8b1893324b03940adf0ff390b017a0` | No |
+| Routing engine | `C:\Users\bende\OneDrive\Desktop\Lunery\Routelag\Routelag\routelag-desktop\src-tauri\engine\windows\RouteLagEngine.exe` | `34947BF9C4AFE05C5223EBF151458E7DD3BF0FA05144413A1E0143B056109C51` | 9,257,080 | Packaged by `f69ec19dee8b1893324b03940adf0ff390b017a0` | Yes - valid WireGuard LLC signature |
+| WireGuard helper | `C:\Users\bende\OneDrive\Desktop\Lunery\Routelag\Routelag\routelag-desktop\src-tauri\engine\windows\routelag-wg.exe` | `CA153177E2BFAA144F69C433B685C4C26630473909E18C56E88509F48277A790` | 140,408 | Packaged by `f69ec19dee8b1893324b03940adf0ff390b017a0` | Yes - valid WireGuard LLC signature |
+| Uninstaller | `C:\Users\bende\OneDrive\Desktop\Lunery\Routelag\Routelag\routelag-installer\src-tauri\target\release\routelag-uninstall.exe` | `0E4C1E0C93308F234EF97AA9EA883D1F7B013399298243236F3640158142A91A` | 12,702,208 | `f69ec19dee8b1893324b03940adf0ff390b017a0` | No |
+
+Artifact byte scans found no `sk_live_`, `sk_test_`, `CLERK_SECRET_KEY`, private-key header, JWT-shaped token, Dallas admin token name, or `PATHGEN_AUTH_SECRET`. `RouteLag` strings remain in compatibility filenames and owned-resource migration/cleanup paths; no accidental visible product title was identified by the source scan.
+
+### W4. Windows lifecycle matrix
+
+| Scenario | Network restored | DNS restored | Service restored | Adapter restored | Server peer removed | Result |
+|---|---:|---:|---:|---:|---:|---|
+| Normal disconnect | [ ] | [ ] | [ ] | [ ] | [ ] | Not tested with packaged build |
+| Normal close | [ ] | [ ] | [ ] | [ ] | [ ] | Not tested with packaged build |
+| Force-kill recovery | [ ] | [ ] | [ ] | [ ] | [ ] | Not tested with packaged build |
+| Reboot recovery | [ ] | [ ] | [ ] | [ ] | [ ] | Not tested with packaged build |
+| Ethernet/Wi-Fi switch | [ ] | [ ] | [ ] | [ ] | [ ] | Not tested |
+| Sleep/wake | [ ] | [ ] | [ ] | [ ] | [ ] | Not tested |
+| Server unavailable | [ ] | [ ] | [ ] | [ ] | [ ] | Not tested with packaged build |
+| Restore Internet | [ ] | [ ] | [ ] | [ ] | [ ] | Rust logic verified locally only; packaged mutation test not run |
+| Uninstall | [ ] | [ ] | [ ] | [ ] | [ ] | Not tested with packaged build |
+
+No before/after route, DNS, service, adapter, or Dallas peer lifecycle comparison exists for this installer because the required disposable elevated Windows environment or explicit current-machine risk acceptance was not provided.
+
+### W5. Fortnite and installation matrices
+
+| Fortnite test | Result |
+|---|---|
+| Epic Games Launcher opens | [ ] Not tested |
+| Fortnite launches | [ ] Not tested |
+| No Easy Anti-Cheat failure | [ ] Not tested |
+| No BattlEye failure | [ ] Not tested |
+| Supported session entered | [ ] Not tested |
+| Connection remained stable | [ ] Not tested |
+| Zer0 remained stable | [ ] Not tested |
+| Disconnect after Fortnite restored network | [ ] Not tested |
+
+| Installation test | Result |
+|---|---|
+| Fresh install | [ ] Not tested |
+| No dev-server dependency | [~] Embedded production frontend built; clean-machine launch not tested |
+| Legal consent gate | [~] Source and unit tests pass; packaged UI not tested |
+| Unsigned warning | [~] Installer/readme logic present; packaged UI not tested |
+| Dallas only | [~] Explicit Dallas build mode; packaged UI/API behavior not tested |
+| HUD absent | [~] Explicitly disabled in frontend and Rust build; packaged UI not tested |
+| Replay absent | [~] Explicitly disabled in frontend build; packaged UI not tested |
+| RouteLag upgrade | [ ] Not tested |
+| Preserve-data uninstall | [ ] Not tested |
+| Full uninstall | [ ] Not tested |
+
+### W6. Small Post-Fix Audit
+
+1. Original blocker: packaged Windows routing lifecycle and Fortnite/anti-cheat safety were not verified.
+2. Exact files changed: the source freeze commit contains the intended Zer0 rebrand, desktop lifecycle/cleanup/heartbeat/consent work, Core installer and uninstaller work, server entitlement/operations work, monitoring, legal drafts, tests, and repository hygiene changes. This evidence append changes only this audit file after the build commit.
+3. Commit deployed/tested: no deployment performed; installer built from `f69ec19dee8b1893324b03940adf0ff390b017a0`.
+4. Installer hash: `7222B78B3253A804D471C057E02E644428DC2322679CE746F54ED3B3DEAD29B1`.
+5. Test environment: Windows development workstation, non-installing build/test session; not a clean disposable elevated VM lifecycle test.
+6. Automated tests: server 46/46, PathGen 24/24, desktop 32/32, desktop Rust 17/17, installer Rust 5/5; all builds passed.
+7. Real Windows tests: not run. No elevation-dependent network mutation was authorized.
+8. Real Dallas tests: no new Dallas test run in this section; prior section U evidence remains authoritative.
+9. Fortnite tests: not run.
+10. Cleanup and uninstall results: code/unit evidence only; real packaged results not available.
+11. Failed or skipped tests: all packaged install, routing, close, force-kill, reboot, transition, Restore Internet, upgrade, uninstall, unrelated-VPN protection, and Fortnite tests were skipped pending the required safe environment/authorization.
+12. Remaining risks: all skipped Windows lifecycle gates; localhost development-config literal in packaged binaries; unsigned Zer0 binaries; 12 moderate desktop production dependency advisories; legal placeholders; no dedicated full-history secret scanner.
+13. Rollback and recovery procedure: use a clean VM snapshot; keep `routelag-desktop/docs/EMERGENCY-CLEANUP.md` outside the guest; stop testing on unrelated-resource changes; use Restore Internet and owned-resource cleanup; revert the VM snapshot if recovery is incomplete. Do not test on the current workstation without explicit risk acceptance and a restore point.
+14. Safe for internal testing? Yes, for non-routing build review and tightly controlled engineering work; live routing still requires the prescribed safety setup.
+15. Safe for trusted private beta? No.
+16. Safe for public beta? No.
+17. Exact next step: copy the hashed installer and cleanup guide into a clean elevated Windows VM with a snapshot, capture the baseline, and execute Phases 5-17 without changing Dallas unless a genuine server defect is found.
+
+### W7. Final verdict
+
+**Windows safety gate partially verified**
