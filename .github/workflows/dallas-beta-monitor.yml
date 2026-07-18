@@ -1,0 +1,143 @@
+# Dallas Zer0 beta — external monitor
+#
+# Runs from GitHub-hosted runners (not from the Dallas VPS).
+# Alert destination: GitHub Issues labeled dallas-beta-monitor → owner WrenchDevelops.
+# Optional: repository secret DISCORD_WEBHOOK_URL for Discord ops channel delivery.
+#
+# Consecutive-failure policy: two failed runs in a row open/update the alert issue.
+# Recovery: successful run closes the open monitor issue with a recovery comment.
+
+name: dallas-beta-monitor
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub may drift slightly on free/private plans).
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_fail:
+        description: "Force a failing probe (proof / controlled outage simulation)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      probe_url:
+        description: "Optional probe URL override (e.g. https://httpstat.us/503 for proof)"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: dallas-beta-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Probe Dallas
+        id: probe
+        env:
+          # Optional repo variable DALLAS_API_BASE overrides this default.
+          API_BASE: ${{ vars.DALLAS_API_BASE }}
+          EXPECTED_NODE_ID: dallas-beta
+          LATENCY_THRESHOLD_MS: "2000"
+          PEER_COUNT_LIMIT: "4"
+          ADMIN_TOKEN: ${{ secrets.DALLAS_ADMIN_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          FORCE_FAIL: ${{ github.event.inputs.force_fail || 'false' }}
+          PROBE_URL: ${{ github.event.inputs.probe_url || '' }}
+          MONITOR_RESULT_PATH: monitor-result.json
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          if [ -z "${API_BASE}" ]; then
+            export API_BASE="http://216.152.154.137:3001"
+          fi
+          node scripts/beta-dallas-monitor.mjs
+          code=$?
+          echo "probe_exit=$code" >> "$GITHUB_OUTPUT"
+          if [ -f monitor-result.json ]; then
+            echo "result_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "result_present=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Load consecutive failure state
+        id: state
+        uses: actions/cache@v4
+        with:
+          path: .monitor-state
+          key: dallas-monitor-state-${{ github.run_id }}
+          restore-keys: |
+            dallas-monitor-state-
+
+      - name: Evaluate consecutive failures and alert
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          MONITOR_GITHUB_REPO: ${{ github.repository }}
+          MONITOR_OWNER: WrenchDevelops
+        run: |
+          set -euo pipefail
+          mkdir -p .monitor-state
+          FAIL_FILE=.monitor-state/consecutive_failures
+          WAS_FAILING_FILE=.monitor-state/was_failing
+          prev=$(cat "$FAIL_FILE" 2>/dev/null || echo 0)
+          was_failing=$(cat "$WAS_FAILING_FILE" 2>/dev/null || echo 0)
+          code="${{ steps.probe.outputs.probe_exit }}"
+
+          if [ "$code" = "0" ]; then
+            echo 0 > "$FAIL_FILE"
+            if [ "$was_failing" = "1" ] || [ "$prev" -ge 1 ]; then
+              node scripts/beta-dallas-alert.mjs --mode recovery --result monitor-result.json
+            fi
+            echo 0 > "$WAS_FAILING_FILE"
+            echo "Probe healthy"
+            exit 0
+          fi
+
+          next=$((prev + 1))
+          echo "$next" > "$FAIL_FILE"
+          echo 1 > "$WAS_FAILING_FILE"
+          echo "Probe failed (consecutive=$next)"
+
+          # Alert after two consecutive failures (beta threshold).
+          if [ "$next" -ge 2 ]; then
+            node scripts/beta-dallas-alert.mjs --mode outage --result monitor-result.json
+          else
+            echo "Deferring alert until second consecutive failure"
+          fi
+
+          # Do not fail the workflow on the first deferred failure only —
+          # still mark job failed when alerting so Actions email can fire.
+          if [ "$next" -ge 2 ]; then
+            exit 1
+          fi
+          exit 0
+
+      - name: Upload probe result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dallas-monitor-result-${{ github.run_id }}
+          path: |
+            monitor-result.json
+            .monitor-state
+          if-no-files-found: ignore
