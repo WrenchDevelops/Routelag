@@ -1177,20 +1177,20 @@ Working-tree-only (not part of monitoring commit if dirty with unrelated prior e
 
 | Test | Method | Result |
 |------|--------|--------|
-| Controlled failing probe without killing routing | `PROBE_URL=http://216.152.154.137:3001/healthz` (404) | **Pass** — exit 1, findings `http_404` |
-| Alert generated | `beta-dallas-alert.mjs --mode proof-outage` | **Pass** — [#1](https://github.com/WrenchDevelops/Routelag/issues/1) |
-| Alert reaches real destination | GitHub Issues for **WrenchDevelops** | **Pass** — issue created under owner account |
-| Restore normal service probe | Default probe → `/health` 200, `nodePresent: true` (`dallas-beta`) | **Pass** |
-| Recovery notification | proof-recovery closed [#1](https://github.com/WrenchDevelops/Routelag/issues/1) (+ [#2](https://github.com/WrenchDevelops/Routelag/issues/2) recovery record) | **Pass** |
-| Monitor displays correct Dallas node | Healthy result `targetNode` / body `dallas-beta` | **Pass** |
-| No secrets/user data in alert | Scanned issue bodies for `sk_`/`pk_`/`Bearer`/`whsec_`/PEM | **Pass** — none |
-| Intentional WG/API kill for users | **Not performed** (forbidden while users may be active) | N/A by design |
+| Controlled failing probe without killing routing | `PROBE_URL=…/healthz` (404) locally; GHA `force_fail=true` ×2 | **Pass** — local exit 1; GHA second run failed and alerted |
+| Alert generated | Local proof + GHA consecutive fail | **Pass** — [#1](https://github.com/WrenchDevelops/Routelag/issues/1) (local proof), [#3](https://github.com/WrenchDevelops/Routelag/issues/3) (GHA external) |
+| Alert reaches real destination | GitHub Issues for **WrenchDevelops** | **Pass** |
+| Restore normal service probe | Default `/health` 200 + GHA healthy dispatch | **Pass** — [run 29630694001](https://github.com/WrenchDevelops/Routelag/actions/runs/29630694001), [run 29630727217](https://github.com/WrenchDevelops/Routelag/actions/runs/29630727217) |
+| Recovery notification | proof-recovery + GHA healthy after #3 | **Pass** — [#1](https://github.com/WrenchDevelops/Routelag/issues/1) and [#3](https://github.com/WrenchDevelops/Routelag/issues/3) closed with recovery |
+| Monitor displays correct Dallas node | Healthy result `dallas-beta` | **Pass** |
+| No secrets/user data in alert | Scanned #1/#3 bodies | **Pass** |
+| Intentional WG/API kill for users | **Not performed** | N/A by design |
 
 ### R6. Final monitor table (session)
 
 | Monitor | Active | Threshold | Alert destination | Test alert received |
 |---------|--------|-----------|-------------------|---------------------|
-| API health | **Yes** (script; GHA on push to `main`) | 2 consecutive fails | GitHub Issues → WrenchDevelops | **Yes** (#1) |
+| API health | **Yes** — GHA scheduled + dispatch proven | 2 consecutive fails | GitHub Issues → WrenchDevelops | **Yes** (#1 local, **#3 from GHA**) |
 | API latency | **Yes** | > 2000 ms | Same | Enforced (healthy ~100 ms) |
 | WireGuard state | Partial | service stopped | Runbook / future admin | **No** live WG probe |
 | CPU | Blocked pending `DALLAS_ADMIN_TOKEN` | load1m ≥ 0.85 | Same | Skipped |
@@ -1208,26 +1208,26 @@ Working-tree-only (not part of monitoring commit if dirty with unrelated prior e
 | **Exact files or services changed** | Files in R4. GitHub label `dallas-beta-monitor` created. Issues #1/#2 created for proof. **No** Dallas VPS files/services changed. |
 | **Configuration changed** | GitHub Issues alert routing to owner WrenchDevelops. Optional secrets `DISCORD_WEBHOOK_URL` / `DALLAS_ADMIN_TOKEN` **not** set. |
 | **Deployment target** | Local repo + GitHub Actions on `WrenchDevelops/Routelag` (external). **Not** Dallas live binary deploy. **Not** staging. **Not** PathGen/Railway. |
-| **Tests run** | Healthy Dallas probe (pass); `/healthz` 404 fail probe (pass); FORCE_FAIL (pass); proof outage + recovery issue delivery (pass); secret pattern scan on alert bodies (pass). |
-| **Live probes performed** | `GET /health` 200; `GET /healthz` 404; latency samples ~100–135 ms; node `dallas-beta` present. |
-| **Results** | API health + latency external monitoring path proven with real owner alert + recovery. Host/WG/peer-counter monitors documented but **not** live without admin token + VPS access. `/healthz` still 404 on Dallas. |
+| **Tests run** | Healthy Dallas probe (pass); `/healthz` 404 fail probe (pass); FORCE_FAIL (pass); local proof outage/recovery issues; **GHA** healthy success; **GHA** force_fail ×2 → issue #3; **GHA** recovery close #3; secret pattern scan (pass). |
+| **Live probes performed** | `GET /health` 200; `GET /healthz` 404; latency ~100–135 ms; node `dallas-beta` present; external GHA runners confirmed. |
+| **Results** | API health + latency external monitoring **active** on `main` with real owner alert + recovery proven from GitHub runners. Host/WG/peer-counter monitors documented but **not** live without admin token + VPS access. `/healthz` still 404 on Dallas. |
 | **Rollback procedure** | Disable/delete workflow `.github/workflows/dallas-beta-monitor.yml`; close monitor issues; remove label if desired. No Dallas rollback needed (unchanged). |
 | **Remaining risks** | GHA cron drift; cache-based consecutive-failure state can reset; `/health` still leaky until Prompt 10; admin/WG/CPU/mem/disk/peer failure alerts inactive without secrets/SSH; Discord not wired; entitlement monitors pending live entitlement deploy. |
 | **Blocker status** | **Partially resolved** |
-| **Safe for** | **Internal testing** of monitoring path; **Trusted private beta** for **API up/down + latency alerts to owner** only. **Not** public beta. Full ops monitoring (WG/host/peer counters) still incomplete. |
-| **Exact next step** | (1) Push/enable workflow on `main` if not already. (2) Set GitHub secret `DALLAS_ADMIN_TOKEN` to the **live** Dallas admin secret (do not use local mock `.env`). (3) Optionally set `DISCORD_WEBHOOK_URL`. (4) Finish Prompt 10 so `/healthz` is live. (5) Re-run proof via `workflow_dispatch` with `force_fail=true` from GitHub runners. |
+| **Safe for** | **Internal testing**; **Trusted private beta** for **API up/down + latency alerts to owner WrenchDevelops**. **Not** public beta. Full ops monitoring (WG/host/peer counters) still incomplete. |
+| **Exact next step** | (1) Set GitHub secret `DALLAS_ADMIN_TOKEN` to the **live** Dallas admin secret (not local mock `.env`). (2) Optionally set `DISCORD_WEBHOOK_URL`. (3) Finish Prompt 10 so `/healthz` is live. (4) Re-verify admin metric alerts once token is set. |
 
 ### R8. Completion gate
 
 | Gate | Met? |
 |------|------|
-| External monitor active | **Yes** once workflow is on `main` (scheduled); probe scripts proven from external machine this session |
-| Real test alert received | **Yes** — GitHub issue #1 to WrenchDevelops |
-| Recovery alert received | **Yes** — #1 closed with recovery comments |
+| External monitor active | **Yes** — workflow on `main`, schedule `*/5 * * * *`, healthy GHA run succeeded |
+| Real test alert received | **Yes** — #1 (local proof), **#3 (GHA external force_fail)** |
+| Recovery alert received | **Yes** — #1 and #3 closed with recovery |
 | Incident runbook documented | **Yes** — `docs/BETA_INCIDENT_RUNBOOK.md` |
 | Named owner/destination receives future alerts | **Yes** — WrenchDevelops via `dallas-beta-monitor` issues |
 | Full metric set (WG/CPU/mem/disk/peer failures) live | **No** — blocked on admin token + VPS |
-| Mark fully resolved for trusted private beta | **Partial** — API health/latency alerting yes; full ops matrix no |
+| Mark fully resolved for trusted private beta | **Partial** — API health/latency alerting **yes**; full ops matrix **no** |
 
 ---
 

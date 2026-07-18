@@ -78,7 +78,7 @@ Do **not** stop WireGuard or kill `routelag-api` for proof while external users 
 
 | Monitor | Active | Threshold | Alert destination | Test alert received |
 |---------|--------|-----------|-------------------|---------------------|
-| API health | Yes (script + GHA; `/health` fallback until `/healthz` live) | 2 consecutive failures | GitHub Issues → **WrenchDevelops** (+ optional Discord) | **Yes** — proof outage [#1](https://github.com/WrenchDevelops/Routelag/issues/1) |
+| API health | Yes (script + GHA; `/health` fallback until `/healthz` live) | 2 consecutive failures | GitHub Issues → **WrenchDevelops** (+ optional Discord) | **Yes** — [#1](https://github.com/WrenchDevelops/Routelag/issues/1) proof, [#3](https://github.com/WrenchDevelops/Routelag/issues/3) GHA |
 | API latency | Yes | > 2000 ms | Same | Threshold enforced in probe (healthy sample ~100–135 ms) |
 | WireGuard state | Partial (runbook / VPS) | service stopped | Same when detected | Not via public HTTP this session |
 | CPU | When `DALLAS_ADMIN_TOKEN` set | load1m ≥ 0.85 | Same | Skipped — token not configured |
