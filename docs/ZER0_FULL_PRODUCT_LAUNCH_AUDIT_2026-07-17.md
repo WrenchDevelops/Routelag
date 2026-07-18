@@ -1911,3 +1911,91 @@ No before/after route, DNS, service, adapter, or Dallas peer lifecycle compariso
 ### W7. Final verdict
 
 **Windows safety gate partially verified**
+
+## X. Prompt 16 clean-Windows VM preflight - 2026-07-17/18
+
+Prompt 16 was stopped before installation because its mandatory isolation and rollback prerequisites were not available. No Windows networking mutation, installer launch, Dallas route creation, or server-control change occurred.
+
+### X1. Safety preflight evidence
+
+- [x] Verified live - Installer independently rehashed as `7222B78B3253A804D471C057E02E644428DC2322679CE746F54ED3B3DEAD29B1`, matching the required artifact.
+- [x] Verified live - Expected source commit remains `f69ec19dee8b1893324b03940adf0ff390b017a0`; expected prior audit commit remains `0f4aee9750c501d9231cc6f80adbbd24a8d5f76b`.
+- [!] Failed prerequisite - No VMware Workstation or VirtualBox installation, executable, running process, window, or registered VM configuration was found.
+- [!] Failed prerequisite - Hyper-V management tooling/service was unavailable and the host reports `HypervisorPresent=False`.
+- [!] Failed prerequisite - No clean Windows guest or snapshot named `Before Zer0 Core Test` exists.
+- [!] Failed prerequisite - The available system is the developer's physical workstation (`System manufacturer / System Product Name`), for which separate networking-risk acceptance was not provided.
+- [!] Failed prerequisite - Existing RouteLag, WireGuard, and ExitLag software is present on the host, making it unsuitable for the requested clean baseline and unrelated-VPN protection proof.
+- [x] Verified live - `routelag-desktop/docs/EMERGENCY-CLEANUP.md` remains available outside any future guest.
+
+The Prompt 16 stop condition says to stop before installing when there is no snapshot or reliable rollback mechanism. That condition was applied. The installer was not launched, copied, installed, or published.
+
+### X2. Artifact verification
+
+| Item | Expected | Actual | Result |
+|---|---|---|---|
+| Installer SHA256 | `7222B78B...AD29B1` | `7222B78B...AD29B1` | [x] Pass |
+| Source commit | `f69ec19...17a0` | `f69ec19...17a0` | [x] Pass |
+| Audit commit | `0f4aee9...f76b` | `0f4aee9...f76b` before this append | [x] Pass |
+| HUD disabled | Yes | Build evidence only | [~] Locally verified; packaged UI not launched |
+| Replay disabled | Yes | Build evidence only | [~] Locally verified; packaged UI not launched |
+| Production assets embedded | Yes | Build evidence only | [~] Locally verified; packaged UI not launched |
+| No required Vite server | Yes | Not runtime-tested | [ ] Blocked |
+
+### X3. Windows routing safety
+
+| Scenario | Local cleanup | DNS restored | Routes restored | Server peer removed/expired | Result |
+|---|---:|---:|---:|---:|---|
+| Normal disconnect | - | - | - | - | [ ] Blocked - no safe VM |
+| Normal close | - | - | - | - | [ ] Blocked - no safe VM |
+| Force-kill recovery | - | - | - | - | [ ] Blocked - no safe VM |
+| Reboot recovery | - | - | - | - | [ ] Blocked - no safe VM |
+| Adapter transition | - | - | - | - | [ ] Blocked - no safe VM |
+| Sleep/wake | - | - | - | - | [ ] Blocked - no safe VM |
+| Restore Internet | - | - | - | - | [ ] Blocked - no safe VM |
+| Preserve-data uninstall | - | - | - | - | [ ] Blocked - no safe VM |
+| Full-removal uninstall | - | - | - | - | [ ] Blocked - no safe VM |
+
+### X4. Product verification
+
+| Test | Result | Evidence |
+|---|---|---|
+| Clean install | Blocked | No clean snapshotted guest |
+| Launch without development tools | Blocked | Installer not launched |
+| Free user denied routing | Blocked | No packaged authentication test |
+| Approved tester allowed | Blocked | No packaged authentication test |
+| Dallas-only routing | Blocked | No route created |
+| Heartbeat updates | Blocked | No route created |
+| No duplicate peer | Blocked | No route created |
+| Unrelated VPN preserved | Blocked | Host contains unrelated VPN software and was not mutated |
+| Fortnite launches | Blocked | No disposable Fortnite-capable environment |
+| No Zer0-related anti-cheat error | Blocked | Fortnite phase not run |
+| Upgrade migration | Blocked | No VM and no approved historical installer selected |
+
+### X5. Small Post-Test Audit
+
+1. Original blocker: packaged Windows installation, routing lifecycle, recovery, Fortnite, and uninstall safety remained unverified.
+2. Test environment: read-only preflight on the physical Windows developer workstation; no guest was available.
+3. VM platform and snapshot: none; required snapshot `Before Zer0 Core Test` does not exist.
+4. Windows version: not recorded as guest evidence because no qualifying guest exists.
+5. Exact installer hash: `7222B78B3253A804D471C057E02E644428DC2322679CE746F54ED3B3DEAD29B1`.
+6. Source and audit commits: `f69ec19dee8b1893324b03940adf0ff390b017a0` and `0f4aee9750c501d9231cc6f80adbbd24a8d5f76b` before this append.
+7. Tests completed: artifact rehash, VM platform/configuration/process/window inventory, hypervisor presence check, and host conflicting-software inventory.
+8. Tests blocked: every installation, authentication, routing, recovery, transition, Fortnite, upgrade, and uninstall test.
+9. Failures found: test-environment prerequisite failure only; no product defect inferred.
+10. Fixes made: none.
+11. Retests performed: not applicable.
+12. Networking restoration evidence: no mutation occurred, so host networking required no restoration.
+13. Server peer cleanup evidence: no route or peer was created.
+14. Fortnite and anti-cheat evidence: none; blocked.
+15. Unrelated VPN evidence: RouteLag, WireGuard, and ExitLag are present on the host and remained untouched.
+16. Uninstall evidence: none; blocked.
+17. Remaining risks: the entire real packaged Windows/Fortnite lifecycle matrix remains open.
+18. Blocker status: **Blocked**.
+19. Safe for internal testing? Yes for non-routing engineering/build review under the prior evidence; this run adds no routing safety proof.
+20. Safe for tightly controlled private beta? No.
+21. Safe for public beta? No.
+22. Exact next step: provide or create a clean Windows VM, snapshot it as `Before Zer0 Core Test`, confirm administrator elevation and Dallas reachability, then rerun Prompt 16 from Phase 1. If Fortnite cannot run in that VM, reserve a separate disposable physical Windows machine for Phase 12.
+
+### X6. Final verdict
+
+**Windows safety gate blocked**
