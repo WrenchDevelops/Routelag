@@ -29,6 +29,14 @@ export interface RouteNodeProvisioner {
 
 export type RouteNodeStatus = "online" | "coming soon" | "maintenance";
 
+/**
+ * Client WireGuard AllowedIPs policy for this node.
+ * - full_session: entire IPv4 table via the VPS (0.0.0.0/0) — temporary beta default
+ *   until process-level split routing is proven.
+ * - split_targets: tunnel CIDR + enabled game target CIDRs only.
+ */
+export type RoutingMode = "full_session" | "split_targets";
+
 export interface RouteNode {
   id: string;
   gameId: string;
@@ -49,6 +57,9 @@ export interface RouteNode {
   clientStartIp: string;
 
   wgInterface: string;
+
+  /** Defaults to full_session when omitted (beta integrity mode). */
+  routingMode?: RoutingMode;
 
   targets: RouteNodeTarget[];
 
@@ -95,6 +106,8 @@ const DALLAS_BETA: RouteNode = {
 
   wgInterface: "wg0",
 
+  routingMode: "full_session",
+
   targets: [
     {
       id: "fortnite-na-epic",
@@ -114,7 +127,7 @@ const DALLAS_BETA: RouteNode = {
   tags: ["na", "nac", "dallas", "beta"],
 
   status: "online",
-  notes: "NA-Central test node for targeted Fortnite routing.",
+  notes: "NA-Central full-session tunnel node (temporary beta integrity mode).",
   debugLabel: "na-central",
   recommended: true,
   pingEstimate: "Test in Fortnite",
@@ -145,6 +158,8 @@ const JOHANNESBURG_BETA: RouteNode = {
   clientStartIp: "10.66.66.10",
 
   wgInterface: "wg0",
+
+  routingMode: "full_session",
 
   targets: [],
 
@@ -186,6 +201,8 @@ const ASHBURN_BETA: RouteNode = {
 
   wgInterface: "wg0",
 
+  routingMode: "full_session",
+
   targets: [
     {
       id: "fortnite-na-epic",
@@ -208,7 +225,7 @@ const ASHBURN_BETA: RouteNode = {
   tags: ["na", "nae", "virginia", "ashburn", "beta"],
 
   status: "online",
-  notes: "NA-East test node for targeted Fortnite routing.",
+  notes: "NA-East full-session tunnel node (temporary beta integrity mode).",
   debugLabel: "na-east",
   recommended: true,
   pingEstimate: "Test in Fortnite",
@@ -261,9 +278,13 @@ export function validateNodes(nodes: RouteNode[]): void {
     }
     seenTunnelCidrs.add(node.tunnelCidr);
 
-    // Fail fast on unsafe target policy (never Fortnite-wide, never full tunnel).
+    // Fail fast on unsafe / malformed AllowedIPs policy for this node's mode.
     computeAllowedIps(node);
   }
+}
+
+export function nodeRoutingMode(node: RouteNode): RoutingMode {
+  return node.routingMode === "split_targets" ? "split_targets" : "full_session";
 }
 
 export function findNode(nodes: RouteNode[], id: string): RouteNode | undefined {
@@ -287,14 +308,16 @@ export function endpointHost(node: RouteNode): string {
 }
 
 /**
- * Client-side WireGuard AllowedIPs for this node only:
- * [node.tunnelCidr, ...enabled target CIDRs].
- * Never includes another node's tunnel CIDR or targets, and never a
- * full-tunnel route (0.0.0.0/0, ::/0).
+ * Client-side WireGuard AllowedIPs for this node only.
+ * - full_session: ["0.0.0.0/0"] so auth, matchmaking, DNS, and game traffic share one egress.
+ * - split_targets: [node.tunnelCidr, ...enabled target CIDRs] (legacy; suspended for beta).
+ * Never includes another node's tunnel CIDR or targets.
  */
 export function computeAllowedIps(node: RouteNode): string[] {
-  const entries = [node.tunnelCidr, ...targetCidrs(node)];
-  assertSafeAllowedIps(entries, node.id);
+  const mode = nodeRoutingMode(node);
+  const entries =
+    mode === "full_session" ? ["0.0.0.0/0"] : [node.tunnelCidr, ...targetCidrs(node)];
+  assertSafeAllowedIps(entries, node.id, mode);
   return entries;
 }
 
@@ -304,10 +327,27 @@ export function rejectFullTunnelRoutes(entries: string[]): void {
   }
 }
 
-export function assertSafeAllowedIps(entries: string[], nodeId?: string): void {
+export function assertSafeAllowedIps(
+  entries: string[],
+  nodeId?: string,
+  mode: RoutingMode = "split_targets",
+): void {
+  const label = nodeId ? ` for node "${nodeId}"` : "";
+  if (!entries.length) {
+    throw new Error(`Missing AllowedIPs${label}.`);
+  }
+
+  if (mode === "full_session") {
+    if (entries.length !== 1 || entries[0] !== "0.0.0.0/0") {
+      throw new Error(
+        `Full-session mode requires AllowedIPs exactly 0.0.0.0/0${label}.`,
+      );
+    }
+    return;
+  }
+
   rejectFullTunnelRoutes(entries);
   const [tunnelCidr, ...targetEntries] = entries;
-  const label = nodeId ? ` for node "${nodeId}"` : "";
   if (!tunnelCidr) {
     throw new Error(`Missing tunnel CIDR${label}.`);
   }
@@ -327,9 +367,12 @@ export function isIpv4GameRoute(entry: string): boolean {
   return isIpv4HostRoute(entry);
 }
 
-export function allowedIpsAreSafe(entries: string[]): boolean {
+export function allowedIpsAreSafe(
+  entries: string[],
+  mode: RoutingMode = "split_targets",
+): boolean {
   try {
-    assertSafeAllowedIps(entries);
+    assertSafeAllowedIps(entries, undefined, mode);
     return true;
   } catch {
     return false;
@@ -401,7 +444,8 @@ export function publicNode(node: RouteNode) {
     publicKey: node.publicKey || undefined,
     tunnelCidr: node.tunnelCidr || undefined,
     serverTunnelIp: node.serverTunnelIp || undefined,
-    allowedIps: targetCidrs(node),
+    routingMode: nodeRoutingMode(node),
+    allowedIps: computeAllowedIps(node),
     routeTargets: enabledTargets(node).map((target) => ({ ...target, nodeId: node.id })),
     gameRouteCidrs: targetCidrs(node),
     mtu: node.mtu,

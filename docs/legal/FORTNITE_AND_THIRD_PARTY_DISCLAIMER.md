@@ -1,8 +1,8 @@
-# Fortnite and Third-Party Affiliation Disclaimer (Draft)
+# Fortnite and Third-Party Affiliation Disclaimer
 
-**Document version:** `2026-07-17.1`  
-**Effective date:** `{{EFFECTIVE_DATE}}`  
-**Operator:** `{{LEGAL_COMPANY_NAME}}`
+**Document version:** `2026-07-18.1`  
+**Effective date:** `2026-07-18`  
+**Operator:** WrenchDevelops
 
 ## Epic Games / Fortnite
 
@@ -16,7 +16,7 @@ Zer0 is **not affiliated with or endorsed by ExitLag** (or similar third-party g
 
 ## Overwolf HUD
 
-The Zer0 / RouteLag HUD (where offered) is:
+The Zer0 HUD (where offered) is:
 
 - **Separate** from core paid routing  
 - **Free**  
@@ -29,7 +29,7 @@ Overwolf is a third party; Overwolf’s terms and privacy policy apply to the Ov
 
 ## Clerk and payments
 
-Account authentication and subscriptions use **Clerk** (including Clerk Billing). Zer0 is **not** using **Tebex**. Clerk’s terms and privacy policy apply to identity and payment processing.
+Account authentication and subscriptions use **Clerk** (including Clerk Billing). Clerk’s terms and privacy policy apply to identity and payment processing.
 
 ## Replay parsing vendors
 

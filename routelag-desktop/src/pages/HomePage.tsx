@@ -17,6 +17,7 @@ import {
 import type { MiniView, RouteOption } from "../App";
 import type { HomeReplayCard, OptimizeState, PingResult, TunnelStatus } from "../types";
 import { HUD_ENABLED, REPLAY_ENABLED } from "../lib/featureFlags";
+import { SessionIntegrityBanner } from "../components/SessionIntegrityBanner";
 
 interface HomePageProps {
   busy: string | null;
@@ -137,6 +138,7 @@ export function HomePage({
 
   return (
     <div className="home-page-shell is-ready">
+      <SessionIntegrityBanner />
       <main className="home-main home-dashboard-v2">
         <div className="dashboard-primary-grid">
           <section

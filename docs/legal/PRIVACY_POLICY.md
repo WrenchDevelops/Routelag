@@ -1,18 +1,16 @@
-# Zer0 Privacy Policy (Private Beta Draft)
+# Zer0 Privacy Policy
 
-**Document version:** `2026-07-17.1`  
-**Effective date:** `{{EFFECTIVE_DATE}}`  
-**Operator:** `{{LEGAL_COMPANY_NAME}}` (`{{COMPANY_ADDRESS}}`)  
-**Privacy contact:** `{{PRIVACY_CONTACT}}`  
-**Support:** `{{SUPPORT_EMAIL}}`
-
-> **Draft notice.** This document is a product-prepared draft for a tightly controlled private beta. It is **not** legal advice and is **not** a certification of GDPR, CCPA, COPPA, or other compliance.
+**Document version:** `2026-07-18.1`  
+**Effective date:** `2026-07-18`  
+**Operator:** WrenchDevelops (United States)  
+**Privacy contact:** Zer0 in-app Help Center (mark as privacy)  
+**Support:** Zer0 in-app Help Center
 
 ## 1. Who we are
 
 Zer0 is a **Windows desktop application** that provides **paid or authorized game-routing** functionality, currently focused on **Fortnite**. An optional separate **free Overwolf HUD** may be available. Replay parsing may be offered later and is **disabled** in current Core private-beta installer builds.
 
-Zer0 is operated by `{{LEGAL_COMPANY_NAME}}`. Zer0 is **not affiliated with or endorsed by Epic Games** or **ExitLag**.
+Zer0 is operated by **WrenchDevelops**. Zer0 is **not affiliated with or endorsed by Epic Games** or **ExitLag**.
 
 ## 2. Scope
 
@@ -28,8 +26,6 @@ This policy describes information processed when you:
 
 ## 3. Information we process
 
-The following categories reflect **current repository and infrastructure behavior**. See [DATA_INVENTORY.md](./DATA_INVENTORY.md) for code-backed detail. We do **not** claim a category is unused unless confirmed.
-
 ### 3.1 Account and identity
 
 - Clerk user identifiers and session identifiers  
@@ -39,7 +35,7 @@ The following categories reflect **current repository and infrastructure behavio
 
 **Purpose:** authentication, entitlement, account sync, abuse prevention.  
 **Storage:** Clerk; PathGen/Supabase user records; local app storage for session tokens.  
-**Retention:** `{{DATA_RETENTION_ACCOUNT}}`.
+**Retention:** While your account remains active, then up to 90 days after a deletion request.
 
 ### 3.2 Device and session identifiers
 
@@ -47,7 +43,7 @@ The following categories reflect **current repository and infrastructure behavio
 - Route session IDs, app version, heartbeat timestamps  
 
 **Purpose:** concurrent-session limits, support, operational integrity.  
-**Retention:** `{{DATA_RETENTION_ROUTING}}`.
+**Retention:** Up to 90 days after session end.
 
 ### 3.3 Network and routing data
 
@@ -60,7 +56,7 @@ The following categories reflect **current repository and infrastructure behavio
 **Purpose:** provide routing, score routes, diagnose connectivity, operate nodes.  
 **Important:** Zer0 is designed to route game traffic for authorized use. Zer0 **must not inspect or sell the content of user traffic** (payloads inside encrypted tunnels). Technical metadata needed to operate the tunnel may still be processed.
 
-**Retention:** `{{DATA_RETENTION_ROUTING}}`.
+**Retention:** Up to 90 days after session end.
 
 ### 3.4 Diagnostics, logs, and crash information
 
@@ -70,11 +66,11 @@ The following categories reflect **current repository and infrastructure behavio
 - Server request logs on routing / PathGen infrastructure (operational)  
 
 **Purpose:** debugging and support during private beta.  
-**Retention:** local until cleared/uninstall; uploaded reports `{{DATA_RETENTION_DIAGNOSTICS}}`; logs `{{DATA_RETENTION_LOGS}}`.
+**Retention:** local until cleared/uninstall; uploaded reports up to 90 days; server logs up to 30 days.
 
 ### 3.5 Billing
 
-- Subscription / plan status via **Clerk Billing** (not Tebex)  
+- Subscription / plan status via **Clerk Billing**  
 - Billing snapshot fields synced for entitlement (plan flags / period) — **not** full payment card numbers in Zer0 app databases  
 
 **Purpose:** authorize paid routing features.  
@@ -92,15 +88,15 @@ The following categories reflect **current repository and infrastructure behavio
 When enabled, replay binaries or derived stats may be uploaded to PathGen, processed by a third-party parser (Osirion), and stored as job/stats records.
 
 **Purpose:** match analytics for authorized users.  
-**Retention:** `{{DATA_RETENTION_REPLAY}}`.  
-**Status:** disabled in shipped Core/Dallas installer builds until PathGen is cleared for live use.
+**Retention:** Up to 90 days after job completion (when enabled).  
+**Status:** disabled in shipped Core installer builds until cleared for live use.
 
 ### 3.8 Support communications
 
 - Messages and attachments you send via support contact channels  
 - Diagnostic exports you choose to share  
 
-## 4. Legal bases / reasons for processing (high level)
+## 4. Why we process data
 
 Private-beta processing is primarily to:
 
@@ -109,8 +105,6 @@ Private-beta processing is primarily to:
 - Maintain security and prevent abuse  
 - Debug and improve reliability with a small trusted tester group  
 - Comply with law where applicable  
-
-Formal legal-basis mapping for GDPR/UK GDPR (if international testers join) requires counsel — see LEGAL_REVIEW_CHECKLIST.md.
 
 ## 5. Sharing
 
@@ -129,11 +123,11 @@ We do **not** sell personal information for advertising. We do **not** sell user
 
 ## 6. International transfers
 
-Servers and vendors may be located outside your country. Transfer safeguards for GDPR/UK GDPR are **pending professional review** if testers outside the operating jurisdiction participate.
+Servers and vendors may be located outside your country. If international testers participate, transfer safeguards may apply under applicable law.
 
 ## 7. Retention
 
-See placeholders in §3 and PLACEHOLDERS.md. Exact durations must be set by the owner before hosted publication.
+See the retention notes in §3. Exact durations may be updated in a later document version.
 
 ## 8. Your controls
 
@@ -141,13 +135,13 @@ See placeholders in §3 and PLACEHOLDERS.md. Exact durations must be set by the 
 - Disable “include public IP” on diagnostic exports  
 - Clear local logs / cache in Settings  
 - Uninstall the app  
-- Contact `{{PRIVACY_CONTACT}}` for access, correction, or deletion requests  
+- Contact privacy support via the Zer0 Help Center for access, correction, or deletion requests  
 
 Automated export/delete self-service is **not** fully implemented in the current product; requests are handled manually during private beta.
 
 ## 9. Children and minors
 
-Minimum age: `{{MINIMUM_AGE}}`. Zer0 **may be used by minors** in some households. Parental consent, payment-by-minors rules, and child-specific privacy laws require **professional legal review** and are **not** independently resolved by this draft. See LEGAL_REVIEW_CHECKLIST.md.
+Minimum age: **13**. If you are under the age of majority where you live, you may use Zer0 only with parental/guardian authority where required by law.
 
 ## 10. Security
 
@@ -159,7 +153,6 @@ We may update this policy. Material changes for beta will bump the **document ve
 
 ## 12. Contact
 
-Privacy: `{{PRIVACY_CONTACT}}`  
-Support: `{{SUPPORT_EMAIL}}`  
-Address: `{{COMPANY_ADDRESS}}`  
-Governing jurisdiction (for notices): `{{GOVERNING_JURISDICTION}}`
+**Privacy / support:** Zer0 in-app Help Center  
+**Operator:** WrenchDevelops · United States  
+**Governing jurisdiction:** United States

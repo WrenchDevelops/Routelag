@@ -1,19 +1,24 @@
 # RouteLag Beta Desktop
 
-RouteLag is a Windows desktop app for private targeted routing tests. The app
-ships with RouteLag Engine resources in the installer, so beta testers should
-not install a separate tunnel app.
+RouteLag is a Windows desktop app for private routing tests. The app ships with
+RouteLag Engine resources in the installer, so beta testers should not install a
+separate tunnel app.
 
-## Current Beta Flow
+## Current Beta Flow (full-session integrity)
 
 1. Install RouteLag.
 2. Open RouteLag as Administrator when prompted.
 3. Click Restore Internet before testing.
 4. Log in with a beta invite.
-5. Start safe split-route optimization.
-6. Test Fortnite.
-7. Click End Optimization.
-8. Export the RouteLag report ZIP.
+5. **Close Epic Games Launcher and Fortnite** if they are open.
+6. Start Optimize (full-session IPv4 tunnel through the selected VPS).
+7. Wait until Connected (egress IP must match the VPS).
+8. Then open Epic / Fortnite for non-competitive integrity tests only.
+9. Click End Optimization when finished.
+10. Export the RouteLag report ZIP.
+
+**Tournament / competitive testing is paused** until the integrity matrix passes.
+Set `VITE_ZER0_ENABLE_TOURNAMENT_TESTING=true` only after that gate.
 
 ## RouteLag Engine
 
@@ -58,5 +63,6 @@ If either file is missing, RouteLag shows:
 
 `RouteLag Engine is missing or damaged. Reinstall RouteLag.`
 
-RouteLag still blocks full-tunnel policies and only writes targeted route
-profiles returned by the beta API.
+This build accepts full-session (`0.0.0.0/0`) policies returned by the beta API
+and verifies handshake, transfer counters, egress IP, DNS, and IPv6 leak status
+before marking Connected.

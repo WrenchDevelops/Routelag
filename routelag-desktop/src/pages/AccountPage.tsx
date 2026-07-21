@@ -24,7 +24,6 @@ import {
   type AppTheme,
 } from "../lib/appPreferences";
 import { pushCloudPreferences, syncClerkIdentityToCloud } from "../lib/cloudUserSync";
-import { LegalLinks } from "../components/LegalLinks";
 import { useToast } from "../components/Toast";
 
 type ConnectionId = "discord" | "epic" | "google";
@@ -217,6 +216,7 @@ export function AccountPage() {
     setPreferences(saved);
     void pushCloudPreferences(saved).catch(() => undefined);
   };
+
   const freePlan = useMemo(
     () => plans?.find((plan) => plan.isDefault || plan.slug === "free") ?? null,
     [plans],
@@ -857,10 +857,6 @@ export function AccountPage() {
               />
               <span className="account-theme-track" aria-hidden="true" />
             </label>
-          </div>
-          <div className="account-legal-row">
-            <p className="account-legal-label">Legal (free to view)</p>
-            <LegalLinks compact ids={["privacy", "terms", "beta-tester-agreement", "disclaimers"]} />
           </div>
         </section>
       </div>

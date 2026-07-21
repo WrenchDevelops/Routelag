@@ -286,6 +286,12 @@ fn get_public_ip(state: tauri::State<'_, AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn has_ipv6_default_route_cmd(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    app_state(state)?;
+    Ok(network::has_ipv6_default_route())
+}
+
+#[tauri::command]
 fn ping_host(
     state: tauri::State<'_, AppState>,
     host: Option<String>,
@@ -1021,6 +1027,7 @@ fn build_and_run_app() -> Result<(), Box<dyn std::error::Error>> {
             reconnect_tunnel_cmd,
             tunnel_status,
             get_public_ip,
+            has_ipv6_default_route_cmd,
             ping_host,
             run_ping_test_cmd,
             run_traceroute_cmd,

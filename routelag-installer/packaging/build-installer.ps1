@@ -33,6 +33,16 @@ $ErrorActionPreference = "Stop"
 
 $DallasBetaApiUrl = "http://216.152.154.137:3001"
 
+# The bootstrapper must launch on a stock supported Windows installation before
+# it can install anything. Link the MSVC CRT statically so routelag-setup,
+# routelag-uninstall, and the packaged desktop executable do not require an
+# already-installed Visual C++ Redistributable (for example VCRUNTIME140_1.dll).
+$StaticCrtFlag = "-C target-feature=+crt-static"
+if ($env:RUSTFLAGS -notmatch [regex]::Escape($StaticCrtFlag)) {
+    $env:RUSTFLAGS = (($env:RUSTFLAGS, $StaticCrtFlag) -join " ").Trim()
+}
+Write-Host "Rust MSVC runtime: statically linked" -ForegroundColor DarkGray
+
 $PackagingDir = $PSScriptRoot                                   # routelag-installer/packaging
 $InstallerRoot = Split-Path $PackagingDir -Parent                # routelag-installer/
 $RepoRoot = Split-Path $InstallerRoot -Parent                    # Routelag/ (contains all sibling apps)

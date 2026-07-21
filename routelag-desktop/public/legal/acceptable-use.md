@@ -1,10 +1,8 @@
-# Zer0 Acceptable Use Policy (Private Beta Draft)
+# Zer0 Acceptable Use Policy
 
-**Document version:** `2026-07-17.1`  
-**Effective date:** `{{EFFECTIVE_DATE}}`  
-**Operator:** `{{LEGAL_COMPANY_NAME}}`
-
-> **Draft notice.** Not legal advice.
+**Document version:** `2026-07-18.1`  
+**Effective date:** `2026-07-18`  
+**Operator:** WrenchDevelops
 
 ## Permitted use
 
@@ -34,4 +32,4 @@ We may suspend or terminate access, invalidate sessions, and cooperate with prov
 
 ## Reporting
 
-Report abuse or security issues to `{{SUPPORT_EMAIL}}` (or the security channel designated by the Zer0 team).
+Report abuse or security issues through the Zer0 in-app Help Center (or the security channel designated by the Zer0 team).

@@ -1508,6 +1508,20 @@ html.reduce-animations .quick-connect-button > svg {
   font-weight: 680 !important;
 }
 .app-settings-button-row button:hover:not(:disabled) { background: #222 !important; transform: translateY(-1px); }
+.app-settings-sign-out {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #ef6b6b !important;
+  border-color: rgba(239, 107, 107, 0.35) !important;
+  background: transparent !important;
+}
+.app-settings-sign-out:hover:not(:disabled) {
+  background: rgba(217, 67, 67, 0.1) !important;
+  border-color: rgba(239, 107, 107, 0.55) !important;
+  color: #ff7f7f !important;
+}
 .app-settings-warning {
   margin-top: auto !important;
   color: var(--text-secondary) !important;
@@ -2697,8 +2711,15 @@ html.reduce-animations .quick-connect-button > svg {
 .login-view {
   display: grid;
   place-items: center;
+  padding: 28px 24px !important;
+  box-sizing: border-box;
   background: transparent !important;
   color: #f2f2f0;
+}
+.login-view .login-panel,
+.login-view .login-card {
+  max-height: 100%;
+  overflow: hidden;
 }
 .login-card,
 .login-panel {
@@ -2711,20 +2732,37 @@ html.reduce-animations .quick-connect-button > svg {
 }
 .login-panel.login-panel--wide {
   width: min(100%, 520px) !important;
-  padding: 40px 44px 36px !important;
+  padding: 24px 36px 20px !important;
 }
 .login-hero--center {
   flex-direction: column !important;
   align-items: center !important;
   text-align: center !important;
-  gap: 18px !important;
+  gap: 8px !important;
+}
+.login-hero--center .glow-logo,
+.login-hero--center .logo-glow {
+  transform: scale(0.7);
+  margin: -10px 0;
 }
 .login-hero--center .login-copy {
   align-items: center !important;
   text-align: center !important;
+  gap: 2px;
 }
 .login-hero--center .login-copy h1 {
-  font-size: 36px !important;
+  font-size: 26px !important;
+}
+.login-hero--center .login-copy p {
+  margin: 0;
+  font-size: 13px !important;
+}
+.login-panel--wide .login-form-block {
+  gap: 12px;
+}
+.login-panel--wide .login-signed-in-row {
+  padding: 10px 14px;
+  gap: 8px;
 }
 .login-choice-btn--primary {
   color: #fff !important;
@@ -3409,44 +3447,112 @@ html.reduce-animations .quick-connect-button > svg {
 
 /* Private-beta legal consent + document viewer */
 .beta-consent-view .beta-consent-panel {
-  max-height: min(92vh, 860px);
-  overflow: auto;
+  width: min(100%, 470px) !important;
+  padding: 16px 26px 14px !important;
+  overflow: visible;
 }
-.beta-consent-callout {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  margin: 0 0 14px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-2, rgba(255, 255, 255, 0.04));
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
+.beta-consent-panel .login-hero--center {
+  gap: 2px !important;
+  margin-bottom: 10px;
 }
-.beta-consent-callout strong {
-  color: var(--text-primary);
+.beta-consent-panel .login-hero--center .login-copy {
+  gap: 1px !important;
 }
-.beta-consent-list {
+.beta-consent-panel .login-hero--center .login-copy h1 {
+  font-size: 18px !important;
+}
+.beta-consent-panel .login-hero .glow-logo,
+.beta-consent-panel .login-hero .logo-glow {
+  transform: scale(0.45);
+  margin: -20px 0;
+}
+.beta-consent-highlights {
   list-style: none;
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
-.beta-consent-item {
+.beta-consent-highlight {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  font-size: 13px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+}
+.beta-consent-highlight-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--accent);
+}
+.beta-consent-highlight-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.beta-consent-highlight strong {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+.beta-consent-highlight p {
+  margin: 1px 0 0;
+  font-size: 11.5px;
   line-height: 1.4;
+  color: var(--text-secondary);
+}
+.beta-consent-agree {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--text-primary);
   cursor: pointer;
+  text-align: left;
 }
-.beta-consent-item input {
-  margin-top: 2px;
+.beta-consent-agree input {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 2px 0 0;
   flex-shrink: 0;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.beta-consent-agree input:hover {
+  border-color: rgba(255, 59, 18, 0.6);
+}
+.beta-consent-agree input:checked {
+  border-color: #ff3b12;
+  background: #ff3b12;
+  box-shadow: 0 4px 14px rgba(255, 59, 18, 0.4);
+}
+.beta-consent-agree input:checked::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translate(0.5px, -0.5px);
+}
+.beta-consent-agree input:focus-visible {
+  outline: 2px solid rgba(255, 59, 18, 0.55);
+  outline-offset: 2px;
 }
 .beta-consent-doc-link {
   border: 0;
@@ -3457,20 +3563,31 @@ html.reduce-animations .quick-connect-button > svg {
   text-decoration: underline;
   cursor: pointer;
 }
-.beta-consent-links-block {
-  margin: 0 0 16px;
-}
-.beta-consent-links-label {
-  margin: 0 0 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
 .beta-consent-accept {
   display: flex;
-  justify-content: stretch;
+  justify-content: center;
 }
 .beta-consent-accept .glow-button {
-  width: 100%;
+  width: min(100%, 300px);
+  height: 40px;
+  min-height: 40px;
+  font-size: 14px;
+  background: #ff3b12;
+  box-shadow: 0 10px 28px rgba(255, 59, 18, 0.32);
+}
+.beta-consent-accept .glow-button:not(:disabled):hover {
+  background: #ff4d28;
+  box-shadow: 0 12px 32px rgba(255, 59, 18, 0.42);
+}
+.beta-consent-version {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--text-tertiary, var(--text-secondary));
+  opacity: 0.75;
+}
+.beta-consent-version .beta-consent-doc-link {
+  color: inherit;
 }
 
 .legal-links {
@@ -3602,6 +3719,59 @@ html.reduce-animations .quick-connect-button > svg {
   margin: 0 0 6px;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* Settings > About: legal docs as a clean row list instead of inline links */
+.app-settings-legal .app-settings-legal-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.app-settings-legal .legal-links {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+.app-settings-legal .legal-links-sep {
+  display: none;
+}
+.app-settings-legal .legal-links-item {
+  display: block;
+}
+.app-settings-legal .legal-links-btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 2px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  text-decoration: none;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  transition: color 0.12s ease;
+}
+.app-settings-legal .legal-links-item:first-child .legal-links-btn {
+  border-top: 0;
+}
+.app-settings-legal .legal-links-btn::after {
+  content: "\2192";
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.app-settings-legal .legal-links-btn:hover {
+  color: var(--accent);
+}
+.app-settings-legal .legal-links-btn:hover::after {
+  opacity: 1;
+  transform: translateX(0);
+  color: var(--accent);
 }
 .help-legal-copy {
   margin: 0 0 10px;

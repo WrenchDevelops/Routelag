@@ -51,7 +51,7 @@ export function InstallerShell({
 
       {showLogo ? (
         <header className="installer-header">
-          <RouteLagLogo size={welcomeLayout ? 88 : readyLayout ? 52 : 64} showWordmark={welcomeLayout} />
+          <RouteLagLogo size={welcomeLayout ? 88 : readyLayout ? 52 : 64} showWordmark={false} />
         </header>
       ) : null}
 

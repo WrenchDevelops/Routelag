@@ -66,6 +66,7 @@ export const api = {
   logClientEvent: (event: string) => invoke<void>("log_client_event_cmd", { event }),
   tunnelStatus: () => invoke<TunnelStatus>("tunnel_status"),
   getPublicIp: () => invoke<string>("get_public_ip"),
+  hasIpv6DefaultRoute: () => invoke<boolean>("has_ipv6_default_route_cmd"),
   pingHost: (host?: string) => invoke<PingResult>("ping_host", { host }),
   runRouteTest: (mode: "normal" | "Zer0") =>
     invoke<RouteTestResult>("run_route_test", { mode }),

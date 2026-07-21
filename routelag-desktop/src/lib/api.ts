@@ -31,6 +31,8 @@ export interface RouteServer {
   endpointIp?: string;
   endpointHost?: string;
   endpoint?: string;
+  publicIp?: string;
+  routingMode?: "full_session" | "split_targets";
   allowedIps?: string[];
   gameRouteCidrs?: string[];
   routeTargets?: RouteTarget[];
@@ -98,8 +100,13 @@ export interface CreateRouteSessionResponse {
   mtu: number;
   allowedIps: string;
   allowedIpCount?: number;
+  routingMode?: "full_session" | "split_targets";
+  publicIp?: string;
+  targetIps?: string[];
   serverName: string;
   serverId?: string;
+  tunnelCidr?: string;
+  serverTunnelIp?: string;
   entitlementExpiresAt?: string | null;
   expiresAtHint?: {
     maxLifetimeHours: number;

@@ -27,19 +27,6 @@ export function ReadyPage({
       <h1 className="page-title">Ready to Install</h1>
       <p className="page-subtitle">Review your setup before installing Zer0.</p>
 
-      {requiresAdmin ? (
-        <div className="installer-callout installer-callout-warning" role="status">
-          <strong>Administrator permission required.</strong> Installing to Program Files will show
-          a Windows UAC prompt. Approve it to continue. Zer0 routing also needs admin later to
-          start or restore a route session.
-        </div>
-      ) : (
-        <div className="installer-callout" role="status">
-          This location does not require elevation for file copy. Starting Optimization later still
-          needs Windows administrator permission.
-        </div>
-      )}
-
       <div className="ready-summary-card">
         <div className="ready-summary-meta">
           <div className="ready-summary-section">
@@ -69,6 +56,12 @@ export function ReadyPage({
           </ul>
         </div>
       </div>
+
+      <p className="ready-admin-note">
+        {requiresAdmin
+          ? "Windows will ask for administrator permission when the install starts."
+          : "Windows may ask for administrator permission when you start optimizing later."}
+      </p>
     </div>
   );
 }

@@ -231,7 +231,7 @@ function routeModeLabel(mode: LifecycleStressStatus["route_mode"]) {
     case "split_route":
       return "Split route";
     case "full_tunnel":
-      return "Full tunnel blocked";
+      return "Full-session tunnel";
     case "invalid":
       return "Invalid blocked";
     default:

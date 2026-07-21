@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::tunnel;
-use crate::windows_process::hidden_command;
+use crate::windows_process::{hidden_command, hidden_powershell_command};
 
 pub const DEFAULT_PING_HOST: &str = "1.1.1.1";
 const ROUTE_TEST_FILENAME: &str = "route-test-latest.json";
@@ -68,6 +68,26 @@ pub fn get_public_ip() -> Result<String, NetworkError> {
         .and_then(|r| r.text())
         .map(|ip| ip.trim().to_string())
         .map_err(|e| NetworkError::PublicIpFailed(e.to_string()))
+}
+
+/// True when Windows has an IPv6 default route (`::/0`), which can bypass an
+/// IPv4-only WireGuard full-session tunnel.
+pub fn has_ipv6_default_route() -> bool {
+    #[cfg(windows)]
+    {
+        let output = hidden_powershell_command(
+            "if (Get-NetRoute -AddressFamily IPv6 -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Select-Object -First 1) { 'yes' } else { 'no' }",
+        )
+        .output();
+        match output {
+            Ok(out) => String::from_utf8_lossy(&out.stdout).to_lowercase().contains("yes"),
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 pub fn ping_host(host: &str) -> Result<PingResult, NetworkError> {

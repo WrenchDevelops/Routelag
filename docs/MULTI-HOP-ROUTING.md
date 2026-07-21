@@ -41,8 +41,9 @@ Return path: `Fortnite → Exit → Entry → Client`
 ### Client tunnel
 
 - Client establishes WireGuard tunnel to **entry node only**.
-- `AllowedIPs` remains strictly `/32` host routes (Fortnite game IPs) — never `0.0.0.0/0` or `::/0`.
-- Full tunnel is blocked at both API (server-side `allowedIpsAreTargeted` check) and client (`classifyAllowedIps`).
+- For future multi-hop, `AllowedIPs` should stay process/flow scoped — not a
+  static Fortnite CIDR list and not a silent mix of exits.
+- Until then, single-hop beta uses full-session `0.0.0.0/0` for integrity testing.
 
 ### Entry node responsibilities
 
@@ -76,8 +77,8 @@ Return path: `Fortnite → Exit → Entry → Client`
 
 | Requirement | Enforcement point |
 |-------------|-------------------|
-| No full tunnel (`0.0.0.0/0`, `::/0`) | API create + client classify |
-| Targeted `/32` only | `allowedIpsAreTargeted()` on both nodes |
+| Valid route policy (`full_session` or safe `split_targets`) | API `computeAllowedIps` + client classify |
+| Full-session integrity mode (temporary) | Node `routingMode: "full_session"` → `0.0.0.0/0` |
 | Restore Internet always visible | `MiniFooterNav` (client) |
 | End Optimization visible during active route | `StatsPage` (client) |
 | Rollback on create failure | `routeEngine.ts` |

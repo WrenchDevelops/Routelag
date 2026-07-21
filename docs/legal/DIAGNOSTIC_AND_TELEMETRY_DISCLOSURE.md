@@ -1,9 +1,9 @@
-# Diagnostic and Telemetry Disclosure (Private Beta Draft)
+# Diagnostic and Telemetry Disclosure
 
-**Document version:** `2026-07-17.1`  
-**Effective date:** `{{EFFECTIVE_DATE}}`  
-**Operator:** `{{LEGAL_COMPANY_NAME}}`  
-**Privacy contact:** `{{PRIVACY_CONTACT}}`
+**Document version:** `2026-07-18.1`  
+**Effective date:** `2026-07-18`  
+**Operator:** WrenchDevelops  
+**Privacy contact:** Zer0 in-app Help Center (mark as privacy)
 
 ## Why we collect technical data
 
@@ -23,12 +23,9 @@ During private beta, Zer0 collects **technical routing and diagnostic informatio
 | Replay | Files/stats via PathGen/Osirion | **Feature disabled** in Core beta builds |
 | Billing | Plan/entitlement snapshot via Clerk | When subscribed / checked |
 
-Exact inventory: [DATA_INVENTORY.md](./DATA_INVENTORY.md).
-
 ## What we do **not** do (product policy)
 
 - Inspect or sell **user traffic content** inside the tunnel  
-- Use Tebex  
 - Require a paid subscription to read legal documents  
 
 ## Your choices
@@ -46,10 +43,10 @@ Diagnostic upload endpoints may exist for authorized testers. Desktop may primar
 ## Retention
 
 - Local diagnostics/logs: until you clear them or uninstall  
-- Uploaded reports: `{{DATA_RETENTION_DIAGNOSTICS}}`  
-- Routing sessions: `{{DATA_RETENTION_ROUTING}}`  
-- Account records: `{{DATA_RETENTION_ACCOUNT}}`  
+- Uploaded reports: up to 90 days  
+- Routing sessions: up to 90 days after session end  
+- Account records: while your account remains active, then up to 90 days after a deletion request  
 
 ## Contact
 
-`{{PRIVACY_CONTACT}}` · `{{SUPPORT_EMAIL}}`
+Zer0 in-app Help Center (privacy or support)

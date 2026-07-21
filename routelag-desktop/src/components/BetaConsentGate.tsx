@@ -1,16 +1,13 @@
-import { useMemo, useState } from "react";
-import { ShieldAlert } from "lucide-react";
+import { useState } from "react";
+import { FlaskConical, RotateCcw, Wifi } from "lucide-react";
 
 import { GlowButton } from "./GlowButton";
 import { GlowLogo } from "./GlowLogo";
 import { LegalDocModal } from "./LegalDocModal";
-import { LegalLinks } from "./LegalLinks";
 import {
-  LEGAL_ACK_LABELS,
   LEGAL_DOCUMENT_VERSION,
   REQUIRED_LEGAL_ACK_IDS,
   saveLegalConsent,
-  type LegalAckId,
   type LegalDocId,
 } from "../lib/legalConsent";
 import { BETA_BUILD_LABEL } from "../lib/betaMode";
@@ -21,39 +18,48 @@ interface BetaConsentGateProps {
   onAccepted: () => void;
 }
 
-const ACK_DOC_LINKS: Partial<Record<LegalAckId, LegalDocId>> = {
-  privacy_policy: "privacy",
-  terms: "terms",
-  beta_tester_agreement: "beta-tester-agreement",
-  network_risk: "routing-risk",
-  diagnostics: "diagnostics",
-};
+const HIGHLIGHTS = [
+  {
+    icon: RotateCcw,
+    title: "Everything is reversible",
+    body: "Restore Internet puts your connection back to normal in one click.",
+  },
+  {
+    icon: Wifi,
+    title: "Your PC stays untouched",
+    body: "No system files are modified — a restart clears everything.",
+  },
+  {
+    icon: FlaskConical,
+    title: "This is an early beta",
+    body: "Results vary by ISP; lower ping isn't guaranteed.",
+  },
+] as const;
 
 export function BetaConsentGate({
   appVersion,
   clerkUserId,
   onAccepted,
 }: BetaConsentGateProps) {
-  const [checked, setChecked] = useState<Record<LegalAckId, boolean>>(() =>
-    Object.fromEntries(REQUIRED_LEGAL_ACK_IDS.map((id) => [id, false])) as Record<
-      LegalAckId,
-      boolean
-    >,
-  );
+  const [agreed, setAgreed] = useState(false);
   const [openDoc, setOpenDoc] = useState<LegalDocId | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const allChecked = useMemo(
-    () => REQUIRED_LEGAL_ACK_IDS.every((id) => checked[id]),
-    [checked],
+  const docLink = (docId: LegalDocId, label: string) => (
+    <button
+      type="button"
+      className="beta-consent-doc-link"
+      onClick={(event) => {
+        event.preventDefault();
+        setOpenDoc(docId);
+      }}
+    >
+      {label}
+    </button>
   );
 
-  const toggle = (id: LegalAckId) => {
-    setChecked((current) => ({ ...current, [id]: !current[id] }));
-  };
-
   const accept = () => {
-    if (!allChecked || submitting) return;
+    if (!agreed || submitting) return;
     setSubmitting(true);
     try {
       saveLegalConsent({
@@ -74,78 +80,50 @@ export function BetaConsentGate({
           <GlowLogo />
           <div className="login-copy">
             <small>{BETA_BUILD_LABEL}</small>
-            <h1>Private beta consent</h1>
-            <p>
-              Before using Zer0, acknowledge the private-beta terms and network risks.
-              Document version {LEGAL_DOCUMENT_VERSION}.
-            </p>
+            <h1>Welcome to the Zer0 beta</h1>
           </div>
         </div>
 
-        <div className="beta-consent-callout" role="note">
-          <ShieldAlert size={18} strokeWidth={1.8} aria-hidden="true" />
-          <div>
-            <strong>Trusted testers only.</strong> This is a drafting pack for a tightly
-            controlled private beta — not a claim of legal compliance. Placeholders such as
-            company name and jurisdiction still require owner input and professional review.
-          </div>
-        </div>
-
-        <ul className="beta-consent-list">
-          {REQUIRED_LEGAL_ACK_IDS.map((id) => {
-            const docId = ACK_DOC_LINKS[id];
-            return (
-              <li key={id}>
-                <label className="beta-consent-item">
-                  <input
-                    type="checkbox"
-                    checked={checked[id]}
-                    onChange={() => toggle(id)}
-                  />
-                  <span>
-                    {LEGAL_ACK_LABELS[id]}
-                    {docId ? (
-                      <>
-                        {" "}
-                        <button
-                          type="button"
-                          className="beta-consent-doc-link"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            setOpenDoc(docId);
-                          }}
-                        >
-                          Read
-                        </button>
-                      </>
-                    ) : null}
-                  </span>
-                </label>
-              </li>
-            );
-          })}
+        <ul className="beta-consent-highlights">
+          {HIGHLIGHTS.map(({ icon: Icon, title, body }) => (
+            <li key={title} className="beta-consent-highlight">
+              <span className="beta-consent-highlight-icon" aria-hidden="true">
+                <Icon size={18} strokeWidth={1.8} />
+              </span>
+              <div>
+                <strong>{title}</strong>
+                <p>{body}</p>
+              </div>
+            </li>
+          ))}
         </ul>
 
-        <div className="beta-consent-links-block">
-          <p className="beta-consent-links-label">All legal documents</p>
-          <LegalLinks
-            ids={[
-              "privacy",
-              "terms",
-              "acceptable-use",
-              "beta-tester-agreement",
-              "routing-risk",
-              "diagnostics",
-              "disclaimers",
-            ]}
+        <label className="beta-consent-agree">
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={() => setAgreed((current) => !current)}
           />
-        </div>
+          <span>
+            I agree to the {docLink("terms", "Terms of Service")},{" "}
+            {docLink("privacy", "Privacy Policy")},{" "}
+            {docLink("beta-tester-agreement", "Beta Tester Agreement")},{" "}
+            {docLink("routing-risk", "routing risk")}, and{" "}
+            {docLink("diagnostics", "diagnostics")} disclosures.
+          </span>
+        </label>
 
         <div className="beta-consent-accept">
-          <GlowButton type="button" disabled={!allChecked || submitting} onClick={accept}>
-            {submitting ? "Saving…" : "I agree — continue"}
+          <GlowButton type="button" disabled={!agreed || submitting} onClick={accept}>
+            {submitting ? "Saving…" : "Agree and continue"}
           </GlowButton>
         </div>
+
+        <p className="beta-consent-version">
+          {docLink("acceptable-use", "Acceptable Use")} ·{" "}
+          {docLink("disclaimers", "Third-Party Disclaimer")} · Document version{" "}
+          {LEGAL_DOCUMENT_VERSION}
+        </p>
       </div>
 
       <LegalDocModal docId={openDoc} onClose={() => setOpenDoc(null)} />

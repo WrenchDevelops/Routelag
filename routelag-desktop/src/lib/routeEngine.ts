@@ -284,23 +284,6 @@ async function createAndSaveRouteSession(
   });
   await tauriApi.saveBetaReportSnapshot(baseSnapshot).catch(() => undefined);
 
-  if (routeMode === "full_tunnel") {
-    await routeApi.endRouteSession(route.sessionId, 5000).catch((error) => {
-      throw new Error(
-        `Full-route optimization is disabled in this safety build, and API cleanup failed for route session ${route.sessionId}. ${errorText(error)}`,
-      );
-    });
-    await tauriApi.forceClearLocalRouteState().catch(() => undefined);
-    await updateBetaReportSnapshot({
-      route_mode: "blocked",
-      cleanup_result: "Full tunnel blocked",
-      optimize_end_time: new Date().toISOString(),
-    });
-    throw new Error(
-      "Full-route optimization is disabled in this safety build. Zer0 ended the server session before changing your network.",
-    );
-  }
-
   if (routeMode === "invalid") {
     await cleanupCreatedRouteSession(
       route.sessionId,
@@ -393,42 +376,89 @@ async function runPreflight(gameId: string, nodeId: string) {
 
 async function verifyConnection(route: PreparedRouteSession) {
   const started = Date.now();
+  const timeoutMs = route.routeMode === "full_tunnel" ? 45000 : 20000;
   let lastError = "Tunnel verification did not complete.";
+  let baselineTransfer: { rx: number; tx: number } | null = null;
 
-  while (Date.now() - started < 20000) {
+  while (Date.now() - started < timeoutMs) {
     try {
-      const [status, wg, dns, health, active] = await Promise.all([
+      const [status, wg, dns, health, active, egressIp, ipv6Leak] = await Promise.all([
         tauriApi.tunnelStatus(),
         tauriApi.getRouteLagEngineRuntimeStatus(),
         tauriApi.getDnsStatus(),
         routeApi.health(4000),
         tauriApi.loadActiveRouteSession(),
+        publicIpOrNull(),
+        tauriApi.hasIpv6DefaultRoute().catch(() => false),
       ]);
 
       const handshakeOk =
-        wg.latest_handshake_secs_ago == null || wg.latest_handshake_secs_ago < 180;
+        wg.latest_handshake_secs_ago != null && wg.latest_handshake_secs_ago < 180;
       const sessionExists = active?.session_id === route.sessionId;
       const assignedTunnelIp = Boolean(active?.client_address || route.clientAddress);
       const engineStarted = status.state === "connected";
-      const routed = await verifyRoutedReachability(route.allowedIps);
+      const dnsOk = dnsWorks(dns);
+      const transfer = parseTransferCounters(wg.wg_show, wg.transfer_rx, wg.transfer_tx);
+
+      if (!baselineTransfer && transfer && (transfer.rx > 0 || transfer.tx > 0)) {
+        baselineTransfer = transfer;
+      }
+      const transferOk =
+        transfer != null &&
+        transfer.rx > 0 &&
+        transfer.tx > 0 &&
+        (baselineTransfer == null ||
+          transfer.rx > baselineTransfer.rx ||
+          transfer.tx > baselineTransfer.tx ||
+          (transfer.rx > 0 && transfer.tx > 0));
+
+      const expectedEgress = expectedEgressIp(route);
+      const egressOk =
+        route.routeMode !== "full_tunnel" ||
+        (Boolean(expectedEgress) &&
+          Boolean(egressIp) &&
+          egressIp === expectedEgress);
+      const ipv6Ok = route.routeMode !== "full_tunnel" || !ipv6Leak;
+
+      const routed = await verifyRoutedReachability(route.allowedIps, route.routeMode);
+
       if (
         engineStarted &&
         handshakeOk &&
-        dnsWorks(dns) &&
+        dnsOk &&
         health.ok &&
         sessionExists &&
         assignedTunnelIp &&
+        transferOk &&
+        egressOk &&
+        ipv6Ok &&
         routed.ok
       ) {
+        await updateBetaReportSnapshot({
+          public_ip_after: egressIp,
+          route_mode: route.routeMode,
+        });
         await tauriApi
           .logClientEvent(
-            `split_route_verified session=${route.sessionId} mode=${route.routeMode} routed=${routed.detail} public_ip_change_required=false`,
+            `route_verified session=${route.sessionId} mode=${route.routeMode} routed=${routed.detail} egress=${egressIp ?? "unknown"} expected=${expectedEgress ?? "n/a"} transfer_rx=${transfer?.rx ?? 0} transfer_tx=${transfer?.tx ?? 0} ipv6_leak=${ipv6Leak}`,
           )
           .catch(() => undefined);
         return;
       }
 
-      lastError = `status=${status.state}; handshake=${wg.latest_handshake_secs_ago}; dns=${dnsWorks(dns)}; api=${health.ok}; session=${sessionExists}; assignedIp=${assignedTunnelIp}; routed=${routed.detail}; routeMode=${route.routeMode}`;
+      lastError = [
+        `status=${status.state}`,
+        `handshake=${wg.latest_handshake_secs_ago}`,
+        `dns=${dnsOk}`,
+        `api=${health.ok}`,
+        `session=${sessionExists}`,
+        `assignedIp=${assignedTunnelIp}`,
+        `transferOk=${transferOk}`,
+        `egress=${egressIp ?? "none"} expected=${expectedEgress ?? "n/a"}`,
+        `ipv6Leak=${ipv6Leak}`,
+        `routed=${routed.detail}`,
+        `routeMode=${route.routeMode}`,
+      ].join("; ");
     } catch (error) {
       lastError = errorText(error);
     }
@@ -438,9 +468,46 @@ async function verifyConnection(route: PreparedRouteSession) {
   throw new Error(`Zer0 Engine started, but verification failed. ${lastError}`);
 }
 
+export function expectedEgressIp(route: {
+  publicIp?: string;
+  endpoint?: string;
+}): string | null {
+  if (route.publicIp?.trim()) return route.publicIp.trim();
+  const host = route.endpoint?.split(":")[0]?.trim();
+  return host || null;
+}
+
+/** Parse WireGuard transfer counters from wg show text (received / sent). */
+export function parseTransferCounters(
+  wgShow: string,
+  transferRx?: string | null,
+  transferTx?: string | null,
+): { rx: number; tx: number } | null {
+  const match = wgShow.match(
+    /transfer:\s*([\d.]+)\s*\w+\s*received,\s*([\d.]+)\s*\w+\s*sent/i,
+  );
+  if (match) {
+    const rx = Number(match[1]);
+    const tx = Number(match[2]);
+    if (Number.isFinite(rx) && Number.isFinite(tx)) return { rx, tx };
+  }
+  const rx = parseLooseTransferAmount(transferRx);
+  const tx = parseLooseTransferAmount(transferTx);
+  if (rx == null || tx == null) return null;
+  return { rx, tx };
+}
+
+function parseLooseTransferAmount(raw?: string | null): number | null {
+  if (!raw) return null;
+  const match = raw.match(/([\d.]+)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
 export function gameRoutePolicyLabels(allowedIps: string): string[] {
   return splitAllowedIps(allowedIps)
-    .filter((entry) => !entry.startsWith("10."))
+    .filter((entry) => !entry.startsWith("10.") && entry !== "0.0.0.0/0")
     .map((entry) => (entry === "18.88.0.0/16" ? "18.88.x.x" : entry.replace(/\/32$/, "")));
 }
 
@@ -461,6 +528,9 @@ export function tunnelGatewayHost(allowedIps: string): string | null {
 }
 
 export function routableTestHosts(allowedIps: string): string[] {
+  if (splitAllowedIps(allowedIps).includes("0.0.0.0/0")) {
+    return ["1.1.1.1"];
+  }
   const gameHosts = gameRouteHosts(allowedIps);
   const gateway = tunnelGatewayHost(allowedIps);
   return [...new Set([...gameHosts, ...(gateway ? [gateway] : [])])];
@@ -471,6 +541,7 @@ export function pickLivePingHost(
   fallbackAllowedIps?: string | null,
 ): string {
   const policy = allowedIps || fallbackAllowedIps || "";
+  if (splitAllowedIps(policy).includes("0.0.0.0/0")) return "1.1.1.1";
   const gameHosts = gameRouteHosts(policy);
   if (gameHosts.length > 0) return gameHosts[0];
   return tunnelGatewayHost(policy) ?? "1.1.1.1";
@@ -478,20 +549,27 @@ export function pickLivePingHost(
 
 export function pickLivePingLabel(allowedIps?: string | null): string {
   const policy = allowedIps || "";
+  if (splitAllowedIps(policy).includes("0.0.0.0/0")) {
+    return "Tunnel egress check (not Fortnite RTT)";
+  }
   const gameHosts = gameRouteHosts(policy);
   if (gameHosts.length > 0) return `Game route ${gameHosts[0]}`;
   const gateway = tunnelGatewayHost(policy);
   if (gateway) return `Tunnel ${gateway}`;
-  return "Ping";
+  return "Connectivity check";
 }
 
 function windowsRoutePrefixesToVerify(allowedIps: string): string[] {
   return splitAllowedIps(allowedIps).filter(
-    (entry) => entry.endsWith("/24") || entry.endsWith("/32"),
+    (entry) =>
+      entry === "0.0.0.0/0" || entry.endsWith("/24") || entry.endsWith("/32"),
   );
 }
 
-async function verifyRoutedReachability(allowedIps: string) {
+async function verifyRoutedReachability(
+  allowedIps: string,
+  routeMode: RouteMode = classifyAllowedIps(allowedIps),
+) {
   const hosts = routableTestHosts(allowedIps);
   if (!hosts.length) {
     return {
@@ -501,7 +579,7 @@ async function verifyRoutedReachability(allowedIps: string) {
   }
 
   const routePrefixes = windowsRoutePrefixesToVerify(allowedIps);
-  if (routePrefixes.length) {
+  if (routePrefixes.length && routeMode !== "full_tunnel") {
     const routeEntries = await tauriApi.getAllowedIpRouteEntries(routePrefixes);
     const missingRoutes = routeEntries.filter((entry) => !entry.installed);
     if (missingRoutes.length) {
@@ -509,6 +587,17 @@ async function verifyRoutedReachability(allowedIps: string) {
         ok: false,
         detail: `Missing Windows routes: ${missingRoutes.map((entry) => entry.allowed_ip).join(", ")}`,
       };
+    }
+  }
+
+  if (routeMode === "full_tunnel") {
+    const routeEntries = await tauriApi
+      .getAllowedIpRouteEntries(["0.0.0.0/0"])
+      .catch(() => []);
+    const hasDefault = routeEntries.some((entry) => entry.installed);
+    if (!hasDefault) {
+      // WireGuard may install default via interface metrics rather than an
+      // explicit 0.0.0.0/0 entry we can query — fall through to ping/egress.
     }
   }
 
@@ -522,7 +611,10 @@ async function verifyRoutedReachability(allowedIps: string) {
       if (ping.packet_loss_pct < 100 && ping.avg_ping_ms != null) {
         return {
           ok: true,
-          detail: `Routed ping to ${host}: ${Math.round(ping.avg_ping_ms)} ms`,
+          detail:
+            routeMode === "full_tunnel"
+              ? `Full-session reachability via ${host}: ${Math.round(ping.avg_ping_ms)} ms (not Fortnite RTT)`
+              : `Routed ping to ${host}: ${Math.round(ping.avg_ping_ms)} ms`,
         };
       }
     } catch (error) {
@@ -540,7 +632,7 @@ const PROBE_STEP_DEFS: Array<{ id: WireGuardProbeStepId; label: string }> = [
   { id: "api_health", label: "Zer0 API health" },
   { id: "local_ready", label: "Local engine and permissions" },
   { id: "server_session", label: "WireGuard session on server" },
-  { id: "route_policy", label: "Split-route policy" },
+  { id: "route_policy", label: "Route policy (full-session / split)" },
   { id: "profile", label: "Local WireGuard profile" },
   { id: "tunnel", label: "Zer0 Engine tunnel" },
   { id: "handshake", label: "WireGuard handshake" },
@@ -651,7 +743,7 @@ export async function testWireGuardServer(
 
       publish("route_policy", "running");
       const targets = routableTestHosts(route.allowedIps);
-      if (route.routeMode !== "split_route") {
+      if (route.routeMode === "invalid") {
         return fail(
           "route_policy",
           `Unsafe route mode ${route.routeMode}. AllowedIPs=${route.allowedIps || "empty"}`,
@@ -660,7 +752,9 @@ export async function testWireGuardServer(
       publish(
         "route_policy",
         "pass",
-        `Split route · ${splitAllowedIps(route.allowedIps).join(", ")} · test targets: ${targets.join(", ") || "none"}`,
+        route.routeMode === "full_tunnel"
+          ? `Full-session tunnel · AllowedIPs ${splitAllowedIps(route.allowedIps).join(", ")} · egress must equal VPS`
+          : `Split route · ${splitAllowedIps(route.allowedIps).join(", ")} · test targets: ${targets.join(", ") || "none"}`,
       );
 
       publish("profile", "pass", `Tunnel IP ${route.clientAddress}`);

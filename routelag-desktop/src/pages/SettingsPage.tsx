@@ -1,23 +1,26 @@
 ﻿import { useEffect, useState } from "react";
-import { useAuth, useUser } from "@clerk/react";
+import { useAuth, useClerk, useUser } from "@clerk/react";
+import { LogOut } from "lucide-react";
 
 import { api } from "../api";
 import { useToast } from "../components/Toast";
 import { LegalLinks } from "../components/LegalLinks";
+import { clearRouteAuth, ensurePathGenSession } from "../lib/api";
 import {
   applyAppPreferences,
   defaultPreferences,
   loadAppPreferences,
   saveAppPreferences,
   type AppPreferences,
+  type AppTheme,
 } from "../lib/appPreferences";
 import { pullAndApplyCloudPreferences, pushCloudPreferences } from "../lib/cloudUserSync";
-import { ensurePathGenSession } from "../lib/api";
 import { LEGAL_DOCUMENT_VERSION } from "../lib/legalConsent";
 
 export function SettingsPage() {
   const { user } = useUser();
   const { getToken } = useAuth();
+  const clerk = useClerk();
   const { showToast } = useToast();
   const [preferences, setPreferences] = useState<AppPreferences>(() => loadAppPreferences());
   const [version, setVersion] = useState("...");
@@ -69,6 +72,10 @@ export function SettingsPage() {
     });
   };
 
+  const setTheme = (theme: AppTheme) => {
+    updatePreference("theme", theme);
+  };
+
   const resetPreferences = () => {
     const next = saveAppPreferences({ ...defaultPreferences });
     setPreferences(next);
@@ -92,6 +99,12 @@ export function SettingsPage() {
     }
   };
 
+  const signOut = () => {
+    clearRouteAuth();
+    window.dispatchEvent(new CustomEvent("routelag:logout"));
+    void clerk.signOut({ redirectUrl: "/" }).catch(() => undefined);
+  };
+
   return (
     <div className="app-settings-view">
       <header className="app-settings-header">
@@ -106,6 +119,11 @@ export function SettingsPage() {
 
       <main className="app-settings-grid">
         <SettingsCard title="Behavior">
+          <ToggleSetting
+            label="Dark mode"
+            checked={preferences.theme === "dark"}
+            onChange={(checked) => setTheme(checked ? "dark" : "light")}
+          />
           <ToggleSetting
             label="Open to last used page"
             checked={preferences.openLastPage}
@@ -150,6 +168,10 @@ export function SettingsPage() {
             <button type="button" onClick={resetPreferences}>
               Reset Settings
             </button>
+            <button type="button" className="app-settings-sign-out" onClick={signOut}>
+              <LogOut size={14} strokeWidth={1.75} aria-hidden="true" />
+              Sign out
+            </button>
           </div>
           <p className="app-settings-warning">
             This only affects local Zer0 settings and logs. It does not change your
@@ -162,8 +184,9 @@ export function SettingsPage() {
           <StatusRow label="Update Status" value="You're up to date" tone="success" />
           <StatusRow label="Legal Pack" value={LEGAL_DOCUMENT_VERSION} />
           <div className="app-settings-legal">
-            <p className="app-settings-legal-label">Legal & disclosures</p>
+            <p className="app-settings-legal-label">Legal documents</p>
             <LegalLinks
+              compact
               ids={[
                 "privacy",
                 "terms",

@@ -1,8 +1,9 @@
 # Zer0 Private Beta — Legal & Disclosure Pack
 
-**Status:** Draft for private beta preparation. **Not** a claim of legal compliance.  
-**Document version:** `2026-07-17.1`  
-**Scope:** Windows desktop Zer0 app (paid/authorized game routing), optional free Overwolf HUD, future replay parsing.
+**Status:** Private-beta documents filled for Zer0 / WrenchDevelops (counsel review still recommended before public launch).  
+**Document version:** `2026-07-18.1`  
+**Scope:** Windows desktop Zer0 app (paid/authorized game routing), optional free Overwolf HUD, future replay parsing.  
+**Operator:** WrenchDevelops · Effective `2026-07-18`
 
 ## Documents in this pack
 

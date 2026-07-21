@@ -1,11 +1,9 @@
-# Zer0 Private Beta Tester Agreement (Draft)
+# Zer0 Private Beta Tester Agreement
 
-**Document version:** `2026-07-17.1`  
-**Effective date:** `{{EFFECTIVE_DATE}}`  
-**Operator:** `{{LEGAL_COMPANY_NAME}}` (`{{COMPANY_ADDRESS}}`)  
-**Support:** `{{SUPPORT_EMAIL}}`
-
-> **Draft notice.** Not legal advice. Intended for a **very small group of trusted testers**.
+**Document version:** `2026-07-18.1`  
+**Effective date:** `2026-07-18`  
+**Operator:** WrenchDevelops (United States)  
+**Support:** Zer0 in-app Help Center
 
 ## 1. Invitation-only access
 
@@ -19,7 +17,7 @@ Until Zer0 publicly announces general availability (or earlier written permissio
 - Screenshots/recordings that reveal unreleased UI if the team asks you not to  
 - Server IPs, admin tooling, or security findings except via private report to the team  
 
-Confidentiality lasts for `{{BETA_CONFIDENTIALITY_PERIOD}}` unless information becomes public through no fault of yours.
+Confidentiality lasts until Zer0 publicly announces general availability, and for **90 days thereafter**, unless information becomes public through no fault of yours.
 
 Constructive private feedback to the Zer0 team is encouraged.
 
@@ -47,7 +45,7 @@ Participation does not create employment or partnership. Any rewards, if offered
 
 ## 6. Feedback license
 
-You grant `{{LEGAL_COMPANY_NAME}}` a worldwide, royalty-free license to use feedback and suggestions to operate and improve Zer0 without attribution obligation.
+You grant **WrenchDevelops** a worldwide, royalty-free license to use feedback and suggestions to operate and improve Zer0 without attribution obligation.
 
 ## 7. Data during testing
 

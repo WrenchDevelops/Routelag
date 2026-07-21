@@ -36,6 +36,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
 import { clearRouteAuth, ensurePathGenSession, getRouteToken, routeApi, ROUTELAG_API_URL } from "./lib/api";
 import { IS_BETA_DALLAS } from "./lib/betaMode";
+import { TOURNAMENT_TESTING_ENABLED } from "./lib/featureFlags";
 import {
   pullAndApplyCloudPreferences,
   pullCloudUserState,
@@ -805,6 +806,10 @@ function AppContent() {
           .pingHost(pickLivePingHost(activeAllowedIps))
           .then(setPing)
           .catch(() => setPing(null));
+        void api
+          .getPublicIp()
+          .then(setPublicIp)
+          .catch(() => undefined);
       }
     }, 6000);
     return () => window.clearInterval(interval);
@@ -1036,6 +1041,21 @@ function AppContent() {
   };
 
   const startOptimizationForServer = async (serverId: string) => {
+    if (!TOURNAMENT_TESTING_ENABLED) {
+      const acknowledged = window.confirm(
+        [
+          "Tournament / competitive testing is paused.",
+          "",
+          "Zer0 will start a FULL-SESSION tunnel (all IPv4 traffic via the selected VPS).",
+          "Close Epic Games Launcher and Fortnite BEFORE continuing.",
+          "Do not switch servers or reconnect after you queue.",
+          "",
+          "Continue only for non-competitive integrity testing?",
+        ].join("\n"),
+      );
+      if (!acknowledged) return;
+    }
+
     setBusy("connect");
     setMessage(null);
     setInlineError(null);
@@ -1525,6 +1545,7 @@ function AppContent() {
           inlineError={inlineError}
           optimizeState={optimizeState}
           ping={ping}
+          publicIp={publicIp}
           selectedCity={
             resolveRouteOption(selectedRoute, routes)?.city ??
             resolveRouteOption(selectedRoute, routes)?.label ??

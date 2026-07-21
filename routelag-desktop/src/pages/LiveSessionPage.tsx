@@ -1,10 +1,23 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 
+import { api as tauriApi } from "../api";
 import { SafetyErrorPanel } from "../components/SafetyErrorPanel";
-import { gameRoutePolicyLabels, tunnelGatewayHost } from "../lib/routeEngine";
+import { SessionIntegrityBanner } from "../components/SessionIntegrityBanner";
+import {
+  classifyAllowedIps,
+  gameRoutePolicyLabels,
+  pickLivePingLabel,
+  tunnelGatewayHost,
+} from "../lib/routeEngine";
 import { OPTIMIZE_PROGRESS_STEPS, optimizeStateLabel } from "../lib/optimizeLabels";
 import { fortniteRegionLabel } from "../lib/userLocation";
-import type { InlineError, OptimizeState, PingResult } from "../types";
+import type {
+  InlineError,
+  OptimizeState,
+  PingResult,
+  RouteLagEngineRuntimeStatus,
+  RouteMode,
+} from "../types";
 
 interface LiveSessionPageProps {
   activeAllowedIps: string | null;
@@ -14,6 +27,7 @@ interface LiveSessionPageProps {
   inlineError: InlineError | null;
   optimizeState: OptimizeState;
   ping: PingResult | null;
+  publicIp?: string | null;
   selectedCity: string;
   selectedCountry: string;
   selectedRouteId: string;
@@ -33,6 +47,7 @@ export function LiveSessionPage({
   inlineError,
   optimizeState,
   ping,
+  publicIp = null,
   selectedCity,
   selectedCountry,
   selectedRouteId,
@@ -51,16 +66,61 @@ export function LiveSessionPage({
     optimizeState === "starting_engine" ||
     optimizeState === "verifying_connection";
 
+  const routeMode: RouteMode = useMemo(
+    () => classifyAllowedIps(activeAllowedIps ?? ""),
+    [activeAllowedIps],
+  );
+  const isFullSession = routeMode === "full_tunnel";
+
   const routedGamePolicy = useMemo(() => {
+    if (isFullSession) return "Full-session (all IPv4 via VPS)";
     const labels = gameRoutePolicyLabels(activeAllowedIps ?? "");
     if (labels.length) return labels.join(", ");
-    return "18.88.x.x (Fortnite NA)";
-  }, [activeAllowedIps]);
+    return "No game targets";
+  }, [activeAllowedIps, isFullSession]);
 
   const tunnelHost = tunnelGatewayHost(activeAllowedIps ?? "") ?? null;
   const tunnelPingMs =
     ping?.avg_ping_ms != null ? Math.round(ping.avg_ping_ms) : null;
+  const pingLabel = pickLivePingLabel(activeAllowedIps);
   const serverLabel = selectedCity || "Zer0 server";
+
+  const [engineRuntime, setEngineRuntime] = useState<RouteLagEngineRuntimeStatus | null>(
+    null,
+  );
+  const [ipv6Leak, setIpv6Leak] = useState<boolean | null>(null);
+  const [dnsOk, setDnsOk] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!connected) {
+      setEngineRuntime(null);
+      setIpv6Leak(null);
+      setDnsOk(null);
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const [wg, ipv6, dns] = await Promise.all([
+          tauriApi.getRouteLagEngineRuntimeStatus(),
+          tauriApi.hasIpv6DefaultRoute().catch(() => false),
+          tauriApi.getDnsStatus().catch(() => null),
+        ]);
+        if (cancelled) return;
+        setEngineRuntime(wg);
+        setIpv6Leak(ipv6);
+        setDnsOk(dns ? dns.results.some((result) => result.resolved) : null);
+      } catch {
+        if (!cancelled) setEngineRuntime(null);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [connected]);
 
   const showBlockingError =
     inlineError &&
@@ -79,7 +139,9 @@ export function LiveSessionPage({
       ? {
           tone: "active" as const,
           label: "Route active",
-          detail: `Fortnite game traffic is routed through ${serverLabel}.`,
+          detail: isFullSession
+            ? `Full-session tunnel through ${serverLabel}. Keep Epic/Fortnite traffic on this exit.`
+            : `Fortnite game traffic is routed through ${serverLabel}.`,
         }
       : optimizeState === "error"
         ? { tone: "error" as const, label: "Connection failed", detail: statusLabel }
@@ -123,11 +185,15 @@ export function LiveSessionPage({
           </div>
           <p>
             {selectedCity
-              ? `${selectedCity} split-route to Fortnite ${fortniteRegionLabel(selectedRouteId)}.`
+              ? isFullSession
+                ? `${selectedCity} full-session tunnel — connect before launching Epic/Fortnite.`
+                : `${selectedCity} split-route to Fortnite ${fortniteRegionLabel(selectedRouteId)}.`
               : "Optimized route session for Fortnite."}
           </p>
         </div>
       </header>
+
+      <SessionIntegrityBanner compact />
 
       {showBlockingError && (
         <SafetyErrorPanel
@@ -143,27 +209,68 @@ export function LiveSessionPage({
           <section className="routing-session-health">
             <h2>Session health</h2>
             <ul>
-              <HealthRow ok label="Tunnel" detail={`Connected via Zer0 Engine`} />
+              <HealthRow ok label="Tunnel" detail="Connected via Zer0 Engine" />
               <HealthRow
-                ok
-                label={`${serverLabel} server`}
+                ok={
+                  engineRuntime?.latest_handshake_secs_ago != null &&
+                  engineRuntime.latest_handshake_secs_ago < 180
+                }
+                label="Handshake"
                 detail={
-                  tunnelHost
-                    ? tunnelPingMs != null
-                      ? `${tunnelPingMs} ms to ${tunnelHost}`
-                      : `Reachable at ${tunnelHost}`
-                    : "Tunnel gateway reachable"
+                  engineRuntime?.latest_handshake_secs_ago != null
+                    ? `${engineRuntime.latest_handshake_secs_ago}s ago`
+                    : "Waiting for handshake"
+                }
+              />
+              <HealthRow
+                ok={Boolean(engineRuntime?.transfer_rx && engineRuntime?.transfer_tx)}
+                label="Transfer"
+                detail={
+                  engineRuntime?.transfer_rx && engineRuntime?.transfer_tx
+                    ? `RX ${engineRuntime.transfer_rx} · TX ${engineRuntime.transfer_tx}`
+                    : "Waiting for counters"
+                }
+              />
+              <HealthRow
+                ok={Boolean(publicIp)}
+                label="Egress IP"
+                detail={publicIp || "Checking…"}
+              />
+              <HealthRow
+                ok={dnsOk !== false}
+                label="DNS"
+                detail={dnsOk == null ? "Checking…" : dnsOk ? "Resolving" : "Failed"}
+              />
+              <HealthRow
+                ok={ipv6Leak !== true}
+                label="IPv6 leak"
+                detail={
+                  ipv6Leak == null
+                    ? "Checking…"
+                    : ipv6Leak
+                      ? "Default ::/0 present — may bypass tunnel"
+                      : "No IPv6 default route"
                 }
               />
               <HealthRow
                 ok
-                label="Fortnite route"
-                detail={`Game IPs ${routedGamePolicy} â†’ ${serverLabel}`}
+                label="Route mode"
+                detail={isFullSession ? "Full-session (0.0.0.0/0)" : routedGamePolicy}
+              />
+              <HealthRow
+                ok={tunnelPingMs != null}
+                label={pingLabel}
+                detail={
+                  tunnelPingMs != null
+                    ? `${tunnelPingMs} ms${tunnelHost ? ` · ${tunnelHost}` : ""}`
+                    : "Measuring…"
+                }
               />
             </ul>
             <p className="routing-session-health-tip">
-              Your normal browsing stays direct. Only Fortnite traffic uses the {serverLabel} tunnel.
-              Check in-game network debug during a match to see if ping improved.
+              {isFullSession
+                ? "This ping is a tunnel connectivity check, not Fortnite match RTT. All IPv4 traffic exits through the VPS until you End Optimization."
+                : `Your normal browsing stays direct. Only Fortnite traffic uses the ${serverLabel} tunnel.`}
             </p>
           </section>
         )}
@@ -273,7 +380,7 @@ export function LiveSessionPage({
                   ))}
                 </ol>
               ) : (
-                <p className="session-check-toast-detail">{sessionStatus.detail}</p>
+                <p>{sessionStatus.detail}</p>
               )}
             </div>
           )}
@@ -283,10 +390,18 @@ export function LiveSessionPage({
   );
 }
 
-function HealthRow({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
+function HealthRow({
+  ok,
+  label,
+  detail,
+}: {
+  ok: boolean;
+  label: string;
+  detail: string;
+}) {
   return (
-    <li className={ok ? "ok" : "warn"}>
-      <span aria-hidden="true">{ok ? "✓" : "!"}</span>
+    <li className={ok ? "is-ok" : "is-warn"}>
+      <span className="routing-session-health-dot" aria-hidden="true" />
       <div>
         <strong>{label}</strong>
         <small>{detail}</small>
@@ -363,7 +478,14 @@ function BoltIcon() {
 
 function ChevronIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="m6 9 6 6 6-6" />
     </svg>
   );

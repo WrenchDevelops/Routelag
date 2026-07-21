@@ -1999,3 +1999,162 @@ The Prompt 16 stop condition says to stop before installing when there is no sna
 ### X6. Final verdict
 
 **Windows safety gate blocked**
+
+## Y. Prompt 17 VM-environment creation preflight - 2026-07-17/18
+
+Prompt 17 stopped during Phase 1 because AMD virtualization is supported by the CPU but disabled in firmware. In accordance with the prompt, no VM platform was installed and no BIOS/UEFI setting was changed automatically.
+
+### Y1. Host virtualization capability
+
+| Check | Result | Evidence |
+|---|---|---|
+| CPU | Pass capability | AMD Ryzen 7 3800X, 8 cores / 16 logical processors |
+| VM monitor extensions | Supported | `VMMonitorModeExtensions=True`; `systeminfo` reports Yes |
+| Second-level address translation | Supported | `SecondLevelAddressTranslationExtensions=True`; `systeminfo` reports Yes |
+| Firmware virtualization | **Blocked** | `VirtualizationFirmwareEnabled=False`; `systeminfo` reports `Virtualization Enabled In Firmware: No` |
+| Hypervisor active | No | `HypervisorPresent=False` |
+| Host memory | Sufficient after firmware fix | 31.91 GB total, 16.2 GB free at preflight |
+| Host disk | Sufficient | C: 1,860.5 GB total, 1,540.14 GB free at preflight |
+| Host OS | Recorded | Windows 11 Home 64-bit, version 10.0.26200, build 26200 |
+| Existing VM platform | None | No VMware or VirtualBox installation/process/window/configuration; Hyper-V tooling/service unavailable |
+| Motherboard / BIOS | Recorded | ASUS PRIME X570-PRO Rev X.0x, AMI BIOS 4802 |
+
+The official ASUS PRIME X570-PRO documentation identifies the setting as `Advanced Mode > Advanced > CPU Configuration > SVM Mode`, where `SVM Mode` enables CPU virtualization. The user must enable it manually in BIOS/UEFI and save/reboot. No BIOS password was requested or guessed. No BIOS update is required merely to change this setting and none was attempted.
+
+### Y2. Phase status
+
+| Prompt 17 phase | Status |
+|---|---|
+| Phase 1 - hardware virtualization | [!] Blocked: firmware SVM disabled |
+| Phase 2 - select/install VM platform | [ ] Not started per mandatory stop rule |
+| Phase 3 - obtain Microsoft ISO | [ ] Not started |
+| Phase 4 - create VM | [ ] Not started |
+| Phase 5 - install/prepare guest | [ ] Not started |
+| Phase 6 - transfer approved files | [ ] Not started |
+| Phase 7 - offline recovery | [ ] Not started |
+| Phase 8 - clean guest baseline | [ ] Not started |
+| Phase 9 - mandatory snapshot | [ ] Not started |
+| Phase 10 - Prompt 16 safety gate | [ ] Not started |
+| Phase 11 - resume Prompt 16 | [ ] Not started |
+
+### Y3. Small Environment Audit
+
+1. Original blocker: no VM platform, clean Windows guest, or rollback snapshot existed.
+2. Host virtualization support: CPU virtualization extensions and SLAT are supported.
+3. Firmware virtualization status: disabled (`SVM Mode` must be enabled manually).
+4. VM platform selected: none installed; selection deferred until the post-reboot verification. Windows 11 Home does not provide the full Hyper-V management stack, so a single third-party platform such as VirtualBox is the likely option after SVM is enabled.
+5. VM name: not created; intended name remains `Zer0-Windows-Safety-Test`.
+6. VM CPU, memory, disk, and network mode: not configured; intended baseline remains 4 vCPU, 8 GB RAM, 80 GB dynamic disk, NAT.
+7. Windows guest version: no guest exists.
+8. Guest administrator status: no guest exists.
+9. Installer hash: previously and independently verified as `7222B78B3253A804D471C057E02E644428DC2322679CE746F54ED3B3DEAD29B1`; not yet verified inside a guest.
+10. Snapshot name: not created; required name remains `Before Zer0 Core Test`.
+11. Clean-baseline result: blocked because no guest exists.
+12. Dallas reachability: not tested from a guest.
+13. Files copied into guest: none.
+14. Host changes made: audit documentation only.
+15. Host networking changes made: none; RouteLag, WireGuard, ExitLag, routes, DNS, adapters, and firewall remained untouched.
+16. Prompt 16 phases completed: none in this run.
+17. Prompt 16 phases blocked: all, pending firmware virtualization and VM creation.
+18. Product defects found: none; this remains an environment prerequisite failure.
+19. Snapshot restorations performed: none.
+20. Remaining risks: firmware change and reboot pending; VM platform/ISO/guest/snapshot absent; full packaged Windows and Fortnite matrices remain open.
+21. Safe for internal testing? Prior non-routing engineering evidence remains valid; this run adds no packaged routing proof.
+22. Safe for trusted private beta? No.
+23. Exact next step: manually enter the ASUS UEFI, enable `Advanced Mode > Advanced > CPU Configuration > SVM Mode`, save changes, reboot Windows, then rerun the virtualization preflight before installing exactly one VM platform.
+
+### Y4. Final verdict
+
+**VM environment creation blocked**
+
+## Z. Prompt 18 SVM verification and clean Windows safety gate - 2026-07-18
+
+Prompt 18 resumed after SVM Mode was manually enabled. Windows and VirtualBox now verify hardware virtualization, a clean Windows guest was created, the approved files were copied, the Dallas public probes passed, and the mandatory powered-off rollback snapshot was captured before any Zer0 installation.
+
+### Z1. Environment and virtualization evidence
+
+| Requirement | Result | Evidence |
+|---|---|---|
+| SVM active in Windows | Pass | `VirtualizationFirmwareEnabled=True`; SLAT `True`; `systeminfo` reports firmware virtualization enabled |
+| One VM platform installed | Pass | Oracle VirtualBox 7.2.12 r174389 only; official Oracle URL; installer SHA256 `5094F3D573FE2A511BFC7AE8982C2F6544AE9B5051048DC7A0E9985C74DCAC4C` |
+| Hardware acceleration | Pass | VirtualBox reports HW virtualization, nested paging, unrestricted execution, and AMD-V VMSAVE/VMLOAD enabled |
+| Host VBS / hypervisor conflict | Pass | VBS status 0 / not enabled; `HypervisorPresent=False` before VirtualBox installation; no competing hypervisor found |
+| VM name | Pass | `Zer0-Windows-Safety-Test` |
+| VM configuration | Pass | 4 vCPU, 8192 MB RAM, 80 GB dynamic VDI, EFI, NAT, one NIC, clipboard/drag-and-drop/shared folders disabled |
+| Official Windows media | Pass | Microsoft `Win11_25H2_English_x64_v2.iso`, Windows 11 Home x64 en-US build 26200.8037; SHA256 `768984706B909479417B2368438909440F2967FF05C6A9195ED2667254E465E3` |
+| Guest tools | Pass | VirtualBox Guest Additions 7.2.12 r174389, run level 3 |
+| Guest internet and DNS | Pass | TCP 1.1.1.1:443 succeeded; `microsoft.com` resolved |
+| Dallas reachable | Pass | TCP `216.152.154.137:3001` succeeded; `/healthz` returned `{\"ok\":true}` |
+| Public `/health` redacted | Pass | Returned public status/capacity/node state only; no secret or private infrastructure material observed |
+| Clean guest | Pass | No Zer0, RouteLag, ExitLag, or WireGuard service; no Node.js/Rust/Vite; port 1430 unused; no Zer0/RouteLag AppData paths |
+| Installer hash in guest | Pass | `7222B78B3253A804D471C057E02E644428DC2322679CE746F54ED3B3DEAD29B1` |
+| Emergency guide offline | Pass | Present in repository on host and at `C:\Zer0-Test\EMERGENCY-CLEANUP.md` in guest |
+| Mandatory snapshot | Pass | `Before Zer0 Core Test`, UUID `203b8a60-0167-473b-bf6b-6972d8bd8ba5`, captured powered off before Zer0 installation |
+| Snapshot restoration available | Pass | Snapshot listed and inspectable through `VBoxManage snapshot ...`; restore operation available but not destructively exercised |
+| Host networking untouched | Pass | No host DNS, route, firewall, physical adapter, RouteLag, ExitLag, or WireGuard changes were made |
+
+### Z2. Phase status at the safety gate
+
+| Prompt 18 phase | Status |
+|---|---|
+| Phase 1 - verify SVM | [x] Pass |
+| Phase 2 - inspect virtualization | [x] Pass with elevation limitation on optional-feature enumeration; Windows Home/VBS facts recorded |
+| Phase 3 - select one platform | [x] Oracle VirtualBox only |
+| Phase 4 - verify platform | [x] Pass |
+| Phase 5 - official Windows media | [x] Pass |
+| Phase 6 - create VM | [x] Pass |
+| Phase 7 - install/prepare Windows | [x] Pass; clean local administrator account created and Guest Additions installed |
+| Phase 8 - Dallas probes | [x] Pass |
+| Phase 9 - approved file transfer | [x] Pass |
+| Phase 10 - recovery access | [x] Pass |
+| Phase 11 - clean baseline | [x] Captured in `C:\Zer0-Test\Evidence\Baseline` |
+| Phase 12 - snapshot | [x] Pass |
+| Phase 13 - safety gate | [x] Pass |
+| Phase 14 - packaged matrix | [ ] Not started at this checkpoint |
+| Phase 15 - Fortnite | [ ] Not tested |
+
+### Z3. Recovery procedure
+
+- VM console: open `Zer0-Windows-Safety-Test` in Oracle VirtualBox Manager.
+- Disconnect network: VM Settings > Network > Adapter 1 > clear Cable Connected, or use `VBoxManage controlvm Zer0-Windows-Safety-Test setlinkstate1 off`.
+- Force power off: VirtualBox Machine > Close > Power Off, only if normal shutdown fails.
+- Restore baseline: power off, then restore snapshot `Before Zer0 Core Test` in Snapshots or with `VBoxManage snapshot Zer0-Windows-Safety-Test restore "Before Zer0 Core Test"`.
+- Inspect disk: attach the differencing VDI read-only to a separate recovery VM after preserving the current VM state; do not boot it on the host.
+- Evidence recovery: while Guest Additions is responsive, copy only redacted `C:\Zer0-Test\Evidence` files to an offline host evidence directory before reverting.
+
+### Z4. Checkpoint verdict
+
+**VM environment ready; Zer0 matrix not started**
+
+### Z5. First packaged-install attempt, stop condition, and rebuilt artifact
+
+The verified original artifact was launched interactively inside the isolated VM. Before UAC, consent, or installation could begin, Windows displayed: `The code execution cannot proceed because VCRUNTIME140_1.dll was not found.` This is a clean-machine packaging defect: the custom Rust/Tauri bootstrapper dynamically depended on the Microsoft Visual C++ runtime and could not bootstrap itself on stock Windows.
+
+- Matrix result: stopped immediately before installation or networking changes.
+- Guest after failure: internet, DNS, Dallas reachability, and the two default NAT routes remained functional; no Zer0/RouteLag service, AppData directory, registry key, or port 1430 listener was created.
+- Evidence: `docs/evidence/zer0-vm-2026-07-18/failure-summary.json` plus the captured VM-console error state.
+- Snapshot restoration: guest powered off and snapshot `Before Zer0 Core Test` restored successfully.
+- Host fix: `routelag-installer/packaging/build-installer.ps1` now adds `-C target-feature=+crt-static` to `RUSTFLAGS`, statically linking the MSVC CRT into the setup, uninstaller, and packaged desktop Rust executables.
+- Automated verification: 32 desktop Node tests passed; 17 desktop Rust tests passed; 5 installer Rust tests passed; Windows engine bundle check passed.
+- Rebuilt artifact: `Zer0-Beta-Core-Setup.exe`, SHA256 `601F863BD672A5ACE3497BB81AFF919EA74A7802C3150C0F9A7139D58D8B218C`, unsigned, HUD disabled, Replay disabled.
+- Updated clean snapshot: `Before Zer0 Core Test`, UUID `30459fbe-addd-4a07-9331-96e8e6ffb351`, contains the rebuilt installer and remains pre-install.
+- Remaining artifact warning: the static inspection reports the literal `127.0.0.1:1430` in the binary. The release was built with `custom-protocol` and embedded frontend assets, but the no-development-server runtime test must still be repeated in the clean VM.
+
+Checkpoint verdict: **Zer0 Windows matrix partially completed** (first install attempt failed; fixed artifact rebuilt and clean snapshot updated; retest pending).
+
+### Z6. Superseding retest exposed false Replay reporting
+
+The static-CRT artifact `601F863BD672A5ACE3497BB81AFF919EA74A7802C3150C0F9A7139D58D8B218C` launched successfully on clean Windows, passed the legal-consent gate, selected Base App Only, and reached/accepted UAC. Immediately after elevation, its installation page incorrectly reported `Components: Base App, Replay` and displayed a `PathGen Replay installed` task despite the Core/Replay-disabled requirement.
+
+- The install completed before cancellation could take effect, so evidence was collected immediately and the VM was reverted.
+- Installed files contained only the Zer0/RouteLag desktop executable, routing engine, WireGuard helper, notices, manifest, and uninstaller. No Replay or PathGen-named file was present.
+- No matching network service was active; internet and DNS worked; default NAT routes remained `10.0.2.2` and `fe80::2`; port 1430 was unused.
+- Evidence: `docs/evidence/zer0-vm-2026-07-18/failure-replay-core.json`.
+- Snapshot `Before Zer0 Core Test` UUID `30459fbe-addd-4a07-9331-96e8e6ffb351` was restored successfully.
+- Root cause: installer frontend hardcoded Replay into the Base App component description, installation task list, and component summary even though the Core payload did not contain Replay.
+- Fix: removed the Replay task/summary and changed Base App Only copy to state explicitly that HUD and Replay are not included.
+- Verification: installer TypeScript/Vite build and all 5 installer Rust tests passed.
+- Rebuilt artifact: SHA256 `59A2A2253E2CDF09B24FCDE99BEBD9106DB869AF1BB7EFCE2B5A09AD0C0E4BF8`, verified inside the guest with CertUtil.
+- Updated clean snapshot: `Before Zer0 Core Test`, UUID `19e998ea-f4b1-4165-94fa-0e2da13a3f1c`.
+
+Checkpoint verdict remains **Zer0 Windows matrix partially completed**; corrected-artifact interactive retest pending.

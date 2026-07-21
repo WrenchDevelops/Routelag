@@ -48,13 +48,6 @@ export const INSTALL_TASKS: InstallTask[] = [
     showWhen: (s) => s.includeEngine,
   },
   {
-    id: "replay",
-    label: "PathGen Replay installed",
-    completeAfter: "app",
-    activeOn: "app",
-    showWhen: (s) => s.includeApp,
-  },
-  {
     id: "hud",
     label: "HUD runtime installed",
     completeAfter: "hud",
@@ -88,10 +81,6 @@ export function resolveInstallTaskStatus(
 
   if (currentIndex > completeIndex) return "completed";
 
-  if (task.id === "replay") {
-    return currentIndex > stepIndex("app") ? "completed" : "pending";
-  }
-
   if (currentIndex < activeIndex) return "pending";
   if (currentIndex === activeIndex) return "installing";
 
@@ -106,7 +95,6 @@ export function componentsSummary(selection: ComponentSelection): string {
   const parts: string[] = [];
   if (selection.includeApp) parts.push("Base App");
   if (selection.includeHud) parts.push("HUD");
-  if (selection.includeApp) parts.push("Replay");
   return parts.length > 0 ? parts.join(", ") : "None";
 }
 

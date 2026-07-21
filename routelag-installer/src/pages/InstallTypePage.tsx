@@ -57,7 +57,7 @@ export function InstallTypePage({
       <div className="option-grid">
         <OptionCard
           title="Base App Only"
-          description="Installs the Zer0 desktop app for routing and replay features. HUD not included."
+          description="Installs the Zer0 desktop app for routing. HUD and Replay are not included."
           icon={<CubeIcon />}
           selected={installType === "baseApp"}
           onSelect={() => onChange("baseApp")}

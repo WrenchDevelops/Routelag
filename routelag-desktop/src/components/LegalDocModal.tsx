@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 import { getLegalDoc, type LegalDocId } from "../lib/legalConsent";
@@ -44,7 +45,9 @@ export function LegalDocModal({ docId, onClose }: LegalDocModalProps) {
 
   if (!docId || !meta) return null;
 
-  return (
+  // Portal to <body> so no page-level stacking context (status bar, headers)
+  // can render above the document viewer.
+  return createPortal(
     <div className="legal-doc-backdrop" role="presentation" onClick={onClose}>
       <div
         className="legal-doc-modal"
@@ -65,8 +68,8 @@ export function LegalDocModal({ docId, onClose }: LegalDocModalProps) {
           </button>
         </header>
         <p className="legal-doc-draft-note">
-          Draft for private beta — not a claim of legal compliance. Placeholders like{" "}
-          <code>{"{{LEGAL_COMPANY_NAME}}"}</code> require owner input.
+          Private beta documents for Zer0 · Document version 2026-07-18.1 · Operator
+          WrenchDevelops
         </p>
         <div className="legal-doc-body">
           {error ? <p className="legal-doc-error">{error}</p> : <pre>{body}</pre>}
@@ -77,6 +80,7 @@ export function LegalDocModal({ docId, onClose }: LegalDocModalProps) {
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

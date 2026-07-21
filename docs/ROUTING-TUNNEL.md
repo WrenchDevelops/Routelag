@@ -2,15 +2,33 @@
 
 This is the RouteLag private beta route tunnel.
 
-Normal tester flow:
+Normal tester flow (full-session integrity mode):
 
 ```text
-Login -> Select Fortnite -> Select beta route -> Optimize
+Login -> Close Epic/Fortnite -> Select beta route -> Optimize -> Verify Connected -> Then open Epic/Fortnite
 ```
+
+**Tournament / competitive queues are paused** until the full-session test matrix
+passes (stable egress IP from login through match completion). See
+[`VPS-HARDENING-CHECKLIST.md`](./VPS-HARDENING-CHECKLIST.md).
 
 The tester does not import tunnel files manually. The desktop app creates a
 local keypair, sends only the public key to the RouteLag API, receives route
 details, writes a hidden local RouteLag Engine profile, and starts the route.
+
+## Temporary beta default: full-session tunnel
+
+Online Fortnite beta nodes (Dallas, Ashburn) use `routingMode: "full_session"`.
+Client WireGuard `AllowedIPs` is `0.0.0.0/0` so authentication, matchmaking,
+DNS, content beacon, and game traffic share **one VPS egress IP**.
+
+Destination-based split lists (for example `18.88.0.0/16` only) are suspended
+for this integrity pass. Process/connection-level split routing is Phase 2
+after the matrix passes.
+
+Connect **before** opening Epic Games Launcher or Fortnite. Do not switch
+servers or silently fail over mid-session. Heartbeat never recreates a route
+on another node.
 
 ## South Africa to Middle East Beta Servers
 
@@ -20,18 +38,22 @@ details, writes a hidden local RouteLag Engine profile, and starts the route.
 - Amsterdam Beta, or Paris if that server was purchased instead
 
 Each route is configured independently by the API. A route should only be marked
-online when its endpoint, server public key, and captured Fortnite Middle East
-IPv4 `/32` AllowedIPs are configured.
+online when its endpoint, server public key, and routing mode / AllowedIPs
+policy are configured.
 
 ## Tunnel Defaults
 
 - OS: Ubuntu 24
-- Tunnel network: `10.66.66.0/24`
-- Server tunnel IP: `10.66.66.1`
+- Tunnel network: per-node (e.g. Dallas `10.67.0.0/24`, Ashburn `10.68.0.0/24`)
+- Server tunnel IP: first host in the node subnet
 - Route port: UDP `51820`
 - Default DNS: `1.1.1.1`
 - Default MTU: `1280`
-- Full tunnel routes such as `0.0.0.0/0` and `::/0` are blocked.
+- Full-session client AllowedIPs: `0.0.0.0/0` (temporary beta default)
+- IPv6: do not mix; either tunnel `::/0` properly or fail connect when an IPv6
+  default route would bypass the IPv4 tunnel
+- VPS install: `wg0` + MASQUERADE on detected WAN iface; loose `rp_filter=2`;
+  TCPMSS clamp (see `scripts/01-install-node.sh`)
 
 ## Pieces
 
@@ -45,6 +67,8 @@ IPv4 `/32` AllowedIPs are configured.
 5. RouteLag API adds the peer to `wg0`.
 6. Desktop app writes a hidden local RouteLag Engine profile.
 7. Desktop app starts the local tunnel service.
+8. Desktop verifies handshake, TX/RX, egress IP equals the selected VPS, DNS,
+   and no IPv6 default leak before showing Connected.
 
 The backend never receives the client private key.
 

@@ -208,6 +208,6 @@ function resultStateLabel(
   if (cleanupResult === "Cleanup warning") return "Cleanup warning";
   if (cleanupResult === "Cleanup failed") return "Cleanup failed";
   if (routeMode === "split_route") return "Safe split-route active";
-  if (routeMode === "full_tunnel") return "Blocked";
+  if (routeMode === "full_tunnel") return "Full-session tunnel active";
   return fallback;
 }

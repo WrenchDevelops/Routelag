@@ -3,7 +3,7 @@
  * Document version must bump when hosted drafts change in a material way.
  */
 
-export const LEGAL_DOCUMENT_VERSION = "2026-07-17.1";
+export const LEGAL_DOCUMENT_VERSION = "2026-07-18.1";
 
 export const LEGAL_CONSENT_STORAGE_KEY = "zer0.legalConsent.v1";
 

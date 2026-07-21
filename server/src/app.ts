@@ -23,6 +23,7 @@ import {
   effectiveNodeCapacity,
   findNode,
   nodeHealthCheck,
+  nodeRoutingMode,
   nodeStatus,
   publicHealthNode,
   publicNode,
@@ -618,7 +619,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     } catch {
       return reply.code(409).send({
         error:
-          "Unsafe route policy blocked. Zer0 beta servers must use targeted game routes only (no full tunnel).",
+          "Unsafe route policy blocked. Zer0 beta servers must use a valid full-session or targeted split route policy.",
       });
     }
 
@@ -778,6 +779,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
         selectedNode: node.id,
         endpoint: node.endpoint,
         clientTunnelIp: clientIp,
+        routingMode: nodeRoutingMode(node),
         targetIps: targetIpList,
         allowedTargetedRoutes: session.allowedIps,
         serverPeerAllowedIps: clientIp,
@@ -798,11 +800,13 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
       mtu: session.mtu,
       allowedIps: session.allowedIps,
       allowedIpCount: allowedIps.length,
+      routingMode: nodeRoutingMode(node),
       targetIps: targetIpList,
       serverName: node.name,
       serverId: node.id,
       tunnelCidr: node.tunnelCidr,
       serverTunnelIp: node.serverTunnelIp,
+      publicIp: node.publicIp,
       entitlementExpiresAt: session.entitlementExpiresAt,
       expiresAtHint: {
         maxLifetimeHours: config.peerTtlHours,

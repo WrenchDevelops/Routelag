@@ -88,8 +88,8 @@ ListenPort = ${WG_PORT}
 PrivateKey = ${SERVER_PRIV}
 SaveConfig = false
 
-PostUp = iptables -A FORWARD -i ${WG_INTERFACE} -j ACCEPT; iptables -A FORWARD -o ${WG_INTERFACE} -j ACCEPT; iptables -t nat -A POSTROUTING -o ${DEFAULT_IFACE} -j MASQUERADE
-PostDown = iptables -D FORWARD -i ${WG_INTERFACE} -j ACCEPT; iptables -D FORWARD -o ${WG_INTERFACE} -j ACCEPT; iptables -t nat -D POSTROUTING -o ${DEFAULT_IFACE} -j MASQUERADE
+PostUp = iptables -A FORWARD -i %i -o ${DEFAULT_IFACE} -j ACCEPT; iptables -A FORWARD -i ${DEFAULT_IFACE} -o %i -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT; iptables -t nat -A POSTROUTING -s ${WG_SUBNET} -o ${DEFAULT_IFACE} -j MASQUERADE; iptables -t mangle -A FORWARD -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = iptables -D FORWARD -i %i -o ${DEFAULT_IFACE} -j ACCEPT; iptables -D FORWARD -i ${DEFAULT_IFACE} -o %i -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT; iptables -t nat -D POSTROUTING -s ${WG_SUBNET} -o ${DEFAULT_IFACE} -j MASQUERADE; iptables -t mangle -D FORWARD -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 EOF
 
     if [[ -n "${PEERS_BLOCK}" ]]; then
@@ -105,11 +105,13 @@ fi
 # --- Enable IPv4 forwarding ---
 print_section "IP Forwarding"
 cat > "${FORWARDING_CONF}" <<EOF
-# RouteLag MVP — enable IPv4 forwarding for NAT
+# RouteLag — forwarding + loose rp_filter for NAT routing
 net.ipv4.ip_forward=1
+net.ipv4.conf.all.rp_filter=2
+net.ipv4.conf.default.rp_filter=2
 EOF
 sysctl -p "${FORWARDING_CONF}" >/dev/null
-safe_echo "INFO" "IPv4 forwarding enabled."
+safe_echo "INFO" "IPv4 forwarding and loose rp_filter enabled."
 
 # --- Configure UFW safely ---
 print_section "Firewall (UFW)"
@@ -120,6 +122,10 @@ safe_echo "INFO" "SSH (port 22) allowed."
 
 ufw allow "${WG_PORT}/udp" comment 'WireGuard' >/dev/null 2>&1 || true
 safe_echo "INFO" "WireGuard (UDP ${WG_PORT}) allowed."
+
+# Do not open high game ports inbound. Block legacy unsafe agent ports.
+ufw deny 3000/tcp comment 'Block legacy VPS agent' >/dev/null 2>&1 || true
+ufw deny 9999/udp comment 'Block legacy UDP logger' >/dev/null 2>&1 || true
 
 UFW_STATUS="$(ufw status 2>/dev/null | head -1 || echo 'inactive')"
 if echo "${UFW_STATUS}" | grep -qi inactive; then

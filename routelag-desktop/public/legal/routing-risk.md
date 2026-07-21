@@ -1,8 +1,8 @@
-# Routing and Network Risk Disclosure (Private Beta Draft)
+# Routing and Network Risk Disclosure
 
-**Document version:** `2026-07-17.1`  
-**Effective date:** `{{EFFECTIVE_DATE}}`  
-**Operator:** `{{LEGAL_COMPANY_NAME}}`
+**Document version:** `2026-07-18.1`  
+**Effective date:** `2026-07-18`  
+**Operator:** WrenchDevelops
 
 > **Read carefully before enabling Zer0 routing.**
 
@@ -33,8 +33,8 @@ Measured latency can be better, worse, or unchanged depending on ISP, region, no
 Before testing, know how to recover:
 
 1. Use in-app **Restore Internet** (Help Center / quick tools)  
-2. If the app will not start, follow `routelag-desktop/docs/EMERGENCY-CLEANUP.md` (printed/offline copy recommended for beta machines)  
-3. Contact `{{SUPPORT_EMAIL}}` if recovery fails  
+2. If the app will not start, use the Emergency Cleanup steps in the Zer0 Help Center / beta materials (keep an offline copy for beta machines)  
+3. Contact support through the Zer0 Help Center if recovery fails  
 
 ## Administrator permission
 

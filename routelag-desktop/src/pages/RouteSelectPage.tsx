@@ -11,6 +11,7 @@ import {
   resolveUserLocationLabel,
 } from "../lib/userLocation";
 import type { AutoRouteState, TesterProfile } from "../types";
+import { SessionIntegrityBanner } from "../components/SessionIntegrityBanner";
 
 interface RouteSelectPageProps {
   autoRouteBusy: boolean;
@@ -175,6 +176,8 @@ export function RouteSelectPage({
         </button>
       )}
 
+      <SessionIntegrityBanner />
+
       {staleTunnelOnly && (
         <div className="routing-stale-tunnel-banner">
           <span>
@@ -268,7 +271,7 @@ export function RouteSelectPage({
         <section className="routing-picker-panel routing-diagram-panel">
           <div className="routing-panel-heading">
             <h2>Route Diagram</h2>
-            <p>Optimized route for Fortnite.</p>
+            <p>Full-session tunnel for Fortnite (temporary integrity mode).</p>
           </div>
 
           {selected ? (

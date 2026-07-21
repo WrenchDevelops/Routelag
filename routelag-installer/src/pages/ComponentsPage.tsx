@@ -33,7 +33,7 @@ export function ComponentsPage({
           <CheckboxRow
             title="Zer0 App"
             badge="Required"
-            description="Core desktop app, routing dashboard, replay engine, settings, and account."
+            description="Core desktop app, routing dashboard, settings, and account."
             checked={selection.includeApp}
             locked={lockBaseComponents}
             disabled={hudOnlyMode}

@@ -29,6 +29,7 @@ const testNodes: RouteNode[] = [
     serverTunnelIp: "10.66.66.1",
     clientStartIp: "10.66.66.10",
     wgInterface: "wg0",
+    routingMode: "full_session",
     targets: [],
     provisioner: { mode: "disabled" },
     tags: ["sa", "johannesburg", "beta"],
@@ -54,6 +55,7 @@ const testNodes: RouteNode[] = [
     serverTunnelIp: "10.67.0.1",
     clientStartIp: "10.67.0.10",
     wgInterface: "wg0",
+    routingMode: "full_session",
     targets: [
       {
         id: "fortnite-na-epic",
@@ -67,7 +69,7 @@ const testNodes: RouteNode[] = [
     ],
     provisioner: { mode: "local" },
     tags: ["na", "nac", "dallas", "beta"],
-    notes: "NA-Central test node for targeted Fortnite routing.",
+    notes: "NA-Central full-session tunnel node (temporary beta integrity mode).",
     debugLabel: "na-central",
     recommended: false,
     pingEstimate: "Test in Fortnite",
@@ -89,6 +91,7 @@ const testNodes: RouteNode[] = [
     serverTunnelIp: "10.68.0.1",
     clientStartIp: "10.68.0.10",
     wgInterface: "wg0",
+    routingMode: "full_session",
     targets: [
       {
         id: "fortnite-na-epic",
@@ -107,7 +110,7 @@ const testNodes: RouteNode[] = [
       privateKeyPath: "/tmp/ashburn-provisioner",
     },
     tags: ["na", "nae", "ashburn", "beta"],
-    notes: "NA-East test node for targeted Fortnite routing.",
+    notes: "NA-East full-session tunnel node (temporary beta integrity mode).",
     debugLabel: "na-east",
     recommended: true,
     pingEstimate: "Test in Fortnite",
@@ -196,7 +199,7 @@ test("lists the Johannesburg, Dallas, and Ashburn beta routes", async () => {
   assert.equal(servers.every((server) => server.status === "online"), true);
   assert.deepEqual(
     servers.find((server) => server.id === "dallas-beta")?.allowedIps,
-    ["18.88.0.0/16"],
+    ["0.0.0.0/0"],
   );
   assert.equal(servers.find((server) => server.id === "dallas-beta")?.tunnelCidr, "10.67.0.0/24");
   assert.equal(servers.find((server) => server.id === "ashburn-beta")?.tunnelCidr, "10.68.0.0/24");
@@ -227,14 +230,18 @@ test("creates, reports, and ends a mock route session on Dallas", async () => {
     clientAddress: string;
     endpoint: string;
     allowedIps: string;
+    routingMode: string;
     serverPublicKey: string;
     targetIps: string[];
+    publicIp: string;
   }>();
   assert.equal(session.nodeId, "dallas-beta");
   assert.equal(session.clientAddress, "10.67.0.10/32");
   assert.equal(session.endpoint, "216.152.154.137:51820");
   assert.equal(session.serverPublicKey, "/94WFr4JNsNAkn97XN9eoHK4i/4RDFGcpaZJOQb8pFw=");
-  assert.equal(session.allowedIps, "10.67.0.0/24, 18.88.0.0/16");
+  assert.equal(session.allowedIps, "0.0.0.0/0");
+  assert.equal(session.routingMode, "full_session");
+  assert.equal(session.publicIp, "216.152.154.137");
   assert.deepEqual(session.targetIps, ["18.88.0.0"]);
 
   const status = await app.inject({
@@ -255,19 +262,18 @@ test("creates, reports, and ends a mock route session on Dallas", async () => {
   assert.equal(end.json<{ active: boolean }>().active, false);
 });
 
-test("computes Dallas WireGuard allowed IPs without full-tunnel entries", () => {
+test("computes Dallas WireGuard allowed IPs as full-session tunnel", () => {
   const dallas = testNodes.find((node) => node.id === "dallas-beta")!;
   const allowedIps = computeAllowedIps(dallas);
-  assert.deepEqual(allowedIps, ["10.67.0.0/24", "18.88.0.0/16"]);
-  assert.equal(allowedIps.join(", "), "10.67.0.0/24, 18.88.0.0/16");
-  assert.equal(allowedIps.includes("0.0.0.0/0"), false);
+  assert.deepEqual(allowedIps, ["0.0.0.0/0"]);
+  assert.equal(allowedIps.join(", "), "0.0.0.0/0");
   assert.equal(allowedIps.includes("::/0"), false);
 });
 
-test("Johannesburg does not use Dallas tunnel CIDR or Dallas target IP", () => {
+test("Johannesburg full-session does not use Dallas tunnel CIDR or Dallas target IP", () => {
   const johannesburg = testNodes.find((node) => node.id === "johannesburg-beta")!;
   const allowedIps = computeAllowedIps(johannesburg);
-  assert.deepEqual(allowedIps, ["10.66.66.0/24"]);
+  assert.deepEqual(allowedIps, ["0.0.0.0/0"]);
   assert.equal(allowedIps.includes("10.67.0.0/24"), false);
   assert.equal(allowedIps.includes("18.88.0.0/16"), false);
 });
@@ -297,12 +303,13 @@ test("rejects Johannesburg session when peer provisioning is disabled", async ()
   );
 });
 
-test("blocks beta routes that are not targeted IPv4 host routes", async () => {
+test("blocks split_targets beta routes that are not targeted IPv4 host routes", async () => {
   const { dir, config } = testConfig();
   const dallas = testNodes.find((node) => node.id === "dallas-beta")!;
   config.nodes = [
     {
       ...dallas,
+      routingMode: "split_targets",
       targets: [
         {
           id: "unsafe-broad-route",
@@ -331,7 +338,7 @@ test("blocks beta routes that are not targeted IPv4 host routes", async () => {
     },
   });
   assert.equal(create.statusCode, 409);
-  assert.match(create.json<{ error: string }>().error, /targeted game routes only/);
+  assert.match(create.json<{ error: string }>().error, /full-session or targeted split/);
 });
 
 test("admin sessions require admin auth and expose node metadata", async () => {
@@ -368,7 +375,7 @@ test("admin sessions require admin auth and expose node metadata", async () => {
   const body = sessions.json<{ sessions: Array<{ nodeId: string; inviteCode: string; allowedIps: string }> }>();
   assert.equal(body.sessions[0].nodeId, "dallas-beta");
   assert.equal(body.sessions[0].inviteCode, "BETA-SA-001");
-  assert.match(body.sessions[0].allowedIps, /10\.67\.0\.0\/24/);
+  assert.match(body.sessions[0].allowedIps, /0\.0\.0\.0\/0/);
 });
 
 test("returns auto route candidates and nodes for fortnite", async () => {
